@@ -1,7 +1,9 @@
 import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
 import { logger } from '../../utils/logger.js';
-import { assertStaffAccess, conflict, resolveWriteBranch, staffScope, unprocessable } from '../shared/access.js';
+import { ROLES } from '../../config/roles.js';
+import { assertStaffAccess, conflict, isAdmin, loadTeacherScope, notAssigned, resolveWriteBranch, staffScope, unprocessable } from '../shared/access.js';
+import { marksAccess, paperSectionsForTeacher, teaches } from '../shared/teacher-scope.helpers.js';
 import * as repo from './exams.repository.js';
 
 function mapExam(e) {
@@ -146,8 +148,24 @@ export async function updatePaper(auth, id, patch) {
   return mapPaper(await repo.getPaper(pool, id));
 }
 
+/**
+ * The teacher's marks screen: current-year papers of subjects they teach in some section
+ * of the paper's class. `sections` = the sections they may open (canEdit: subject teacher;
+ * read-only: their class-teacher section).
+ */
 export async function listTeacherPapers(auth) {
-  return (await repo.listBranchPapers(auth.branchId)).map((p) => mapPaper(p, { withExam: true }));
+  const [scope, papers, sections] = await Promise.all([
+    loadTeacherScope(pool, auth),
+    repo.listBranchPapers(auth.branchId),
+    repo.branchSections(pool, auth.branchId),
+  ]);
+  const byClass = Map.groupBy(sections, (s) => s.class_id);
+  const out = [];
+  for (const p of papers) {
+    const mine = paperSectionsForTeacher(scope, { subjectId: p.subject_id, sectionId: p.section_id }, byClass.get(p.class_id) ?? []);
+    if (mine) out.push({ ...mapPaper(p, { withExam: true }), sections: mine });
+  }
+  return out;
 }
 
 // =====================================================================
@@ -170,13 +188,24 @@ async function resolveMarksSection(db, auth, paper, sectionId) {
   return section;
 }
 
+/**
+ * Teacher: the subject teacher of that section may edit; the class teacher may view
+ * (canEdit false); anyone else 403 NOT_ASSIGNED. Admins: canEdit true.
+ */
 export async function getMarks(auth, { paperId, sectionId }) {
   const paper = await loadPaper(pool, auth, paperId);
   const section = await resolveMarksSection(pool, auth, paper, sectionId);
+  let canEdit = isAdmin(auth);
+  if (auth.role === ROLES.TEACHER) {
+    const access = marksAccess(await loadTeacherScope(pool, auth), section.id, paper.subject_id);
+    if (!access) throw notAssigned(`You do not teach ${paper.subject_name} in ${section.class_name} ${section.name}`);
+    canEdit = access === 'edit';
+  }
   const students = await repo.sectionMarks(pool, paper.id, section.id);
   return {
     paper: { ...mapPaper(paper), exam: { id: paper.exam_id, name: paper.exam_name } },
     section: { id: section.id, name: section.name, label: `${section.class_name} ${section.name}` },
+    canEdit,
     students: students.map((s) => ({
       studentId: s.student_id,
       name: s.name,
@@ -197,6 +226,16 @@ export async function saveMarks(auth, { paperId, entries }) {
   const result = await withTransaction(async (db) => {
     // FOR SHARE: a concurrent lock / max-marks change waits for this save, and vice versa.
     const paper = await loadPaper(db, auth, paperId, { lock: 'SHARE' });
+    // Teacher: only the sections where they teach this paper's subject.
+    let teacherScope = null;
+    if (auth.role === ROLES.TEACHER) {
+      teacherScope = await loadTeacherScope(db, auth);
+      const sitting = paper.section_id ? [paper.section_id] : await repo.classSectionIds(db, paper.class_id, paper.academic_year_id);
+      if (!sitting.some((s) => teaches(teacherScope, s, paper.subject_id))) {
+        throw notAssigned(`You do not teach ${paper.subject_name} to this class`);
+      }
+    }
+
     if (paper.marks_locked) throw conflict('PAPER_LOCKED', 'Marks for this paper are locked. Ask the school office to unlock it.');
 
     const outOfRange = {};
@@ -211,6 +250,12 @@ export async function saveMarks(auth, { paperId, entries }) {
     const strangers = entries.filter((e) => !inClass.has(e.studentId)).map((e) => e.studentId);
     if (strangers.length) {
       throw unprocessable('STUDENT_NOT_IN_CLASS', 'Some students do not sit this paper', { studentIds: strangers });
+    }
+    if (teacherScope) {
+      const others = entries.filter((e) => !teaches(teacherScope, inClass.get(e.studentId), paper.subject_id)).map((e) => e.studentId);
+      if (others.length) {
+        throw new AppError(403, 'NOT_ASSIGNED', `Some students are in a section where you do not teach ${paper.subject_name}`, { studentIds: others });
+      }
     }
 
     const toClear = entries.filter((e) => e.marksObtained === null && !e.isAbsent).map((e) => e.studentId);

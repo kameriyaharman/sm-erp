@@ -5,7 +5,7 @@ import { assertBranchAccess } from '../../middleware/scope.js';
 import { logger } from '../../utils/logger.js';
 import { kickDispatcher } from '../notifications/dispatcher.js';
 import * as repo from './attendance.repository.js';
-import { loadSectionForStaff } from '../shared/access.js';
+import { loadSectionInScope } from '../shared/access.js';
 import { attendanceStats, monthRange } from '../shared/school-ops.helpers.js';
 
 // How far back each role may record or change attendance (0 = today only).
@@ -26,10 +26,14 @@ function formatDisplayDate(iso) {
   return `${WEEKDAYS[weekday]} ${d} ${MONTHS[m - 1]} ${y}`;
 }
 
-/** Can this caller mark this section at all? Teachers only their own class; admins by scope. */
+/**
+ * Can this caller mark this section at all? Teachers only their own class (another branch's
+ * section is a 404, a section of their branch they are not class teacher of a 403); admins by scope.
+ */
 function assertSectionAccess(auth, ctx) {
   if (auth.role === ROLES.TEACHER) {
-    if (!ctx.is_class_teacher || auth.tenantId !== ctx.tenant_id) {
+    if (auth.tenantId !== ctx.tenant_id || auth.branchId !== ctx.branch_id) throw AppError.notFound('Section not found', 'SECTION_NOT_FOUND');
+    if (!ctx.is_class_teacher) {
       throw AppError.forbidden('Only the class teacher can take attendance for this section', 'NOT_CLASS_TEACHER');
     }
     return;
@@ -308,11 +312,11 @@ function groupBy(items, keyOf) {
 }
 
 // =====================================================================
-// Monthly history (any section of the caller's branch)
+// Monthly history. Teacher: their class-teacher and subject sections.
 // =====================================================================
 
 export async function attendanceHistory(auth, { sectionId, month }) {
-  const section = await loadSectionForStaff(pool, auth, sectionId);
+  const section = await loadSectionInScope(pool, auth, sectionId);
   const m = month ?? isoOf(section.today).slice(0, 7);
   const { from, to } = monthRange(m);
   const [days, students] = await Promise.all([repo.historyDays(pool, sectionId, from, to), repo.historyStudents(pool, sectionId, from, to)]);

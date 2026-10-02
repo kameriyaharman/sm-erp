@@ -2,7 +2,7 @@
   "name": "sm-erp-api",
   "version": "0.1.0",
   "private": true,
-  "description": "SM ERP backend \u2014 auth, RBAC and finance APIs",
+  "description": "SM ERP backend — auth, RBAC and finance APIs",
   "type": "module",
   "main": "src/server.js",
   "engines": {
@@ -26,6 +26,7 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0",
     "pdfkit": "^0.15.2",
     "pg": "^8.13.1",
     "qrcode": "^1.5.4",

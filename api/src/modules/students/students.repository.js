@@ -14,7 +14,8 @@ const STATUS_FILTERS = {
   all: 'TRUE',
 };
 
-export async function listStudents({ scope, filters, like }) {
+/** sectionIds (array) limits to those sections (teachers); null = no limit. */
+export async function listStudents({ scope, filters, like, sectionIds = null }) {
   const { classId, sectionId, status, sort, page, limit } = filters;
   const { rows } = await query(
     `SELECT sp.id, u.first_name, u.last_name, concat_ws(' ', u.first_name, u.last_name) AS name,
@@ -38,9 +39,10 @@ export async function listStudents({ scope, filters, like }) {
              OR sp.admission_number ILIKE $5
              OR sp.roll_number ILIKE $5
              OR pu.phone ILIKE $5)
+        AND ($8::uuid[] IS NULL OR sp.section_id = ANY ($8))
       ORDER BY ${SORTS[sort]}
       LIMIT $6 OFFSET $7`,
-    [scope.tenantId, scope.branchIds, classId ?? null, sectionId ?? null, like, limit, (page - 1) * limit],
+    [scope.tenantId, scope.branchIds, classId ?? null, sectionId ?? null, like, limit, (page - 1) * limit, sectionIds],
   );
   return rows;
 }

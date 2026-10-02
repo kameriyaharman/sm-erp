@@ -8,7 +8,16 @@ const SELECT = `
                      FROM sections s
                      JOIN classes c ON c.id = s.class_id
                      JOIN academic_years ay ON ay.id = s.academic_year_id AND ay.is_current
-                    WHERE s.class_teacher_id = sf.id AND s.deleted_at IS NULL), '[]'::json) AS class_teacher_of
+                    WHERE s.class_teacher_id = sf.id AND s.deleted_at IS NULL), '[]'::json) AS class_teacher_of,
+         COALESCE((SELECT json_agg(json_build_object('sectionId', s.id, 'sectionLabel', c.name || ' ' || s.name,
+                                                     'subjectId', sub.id, 'subjectName', sub.name)
+                                   ORDER BY c.display_order, c.name, s.name, sub.display_order, sub.name)
+                     FROM teacher_subject_assignments a
+                     JOIN academic_years ay ON ay.id = a.academic_year_id AND ay.is_current
+                     JOIN sections s  ON s.id = a.section_id AND s.deleted_at IS NULL
+                     JOIN classes c   ON c.id = s.class_id
+                     JOIN subjects sub ON sub.id = a.subject_id
+                    WHERE a.staff_id = sf.id), '[]'::json) AS subjects
     FROM staff_profiles sf
     JOIN users u ON u.id = sf.user_id`;
 

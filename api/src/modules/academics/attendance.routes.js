@@ -22,7 +22,7 @@ router.get('/attendance', validate({ query: schemas.rosterQuery }), controller.g
 // Save the register and notify parents of absent students
 router.post('/attendance', validate({ body: schemas.submitAttendanceBody }), controller.submitAttendance);
 
-// Month view of a section's registers (any section of the caller's branch)
+// Month view of a section's registers (teacher: class-teacher and subject sections)
 router.get('/attendance/history', validate({ query: schemas.historyQuery }), controller.attendanceHistory);
 
 // Delivery status of parent notifications for a section and day

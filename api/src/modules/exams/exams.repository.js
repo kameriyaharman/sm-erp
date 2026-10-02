@@ -177,15 +177,38 @@ export async function sectionMarks(db, paperId, sectionId) {
   return rows;
 }
 
-/** Of `studentIds`, those placed in the paper's class (and section) this year. */
+/** Of `studentIds`, those placed in the paper's class (and section) this year: id -> section id. */
 export async function studentsInPaper(db, paper, studentIds) {
   const { rows } = await db.query(
-    `SELECT sp.id FROM student_profiles sp
+    `SELECT sp.id, sp.section_id FROM student_profiles sp
       WHERE sp.id = ANY ($1) AND sp.class_id = $2 AND sp.academic_year_id = $3
         AND ($4::uuid IS NULL OR sp.section_id = $4) AND sp.deleted_at IS NULL`,
     [studentIds, paper.class_id, paper.academic_year_id, paper.section_id],
   );
-  return new Set(rows.map((r) => r.id));
+  return new Map(rows.map((r) => [r.id, r.section_id]));
+}
+
+/** Current-year sections of a branch with labels (teacher paper lists). */
+export async function branchSections(db, branchId) {
+  const { rows } = await db.query(
+    `SELECT s.id, s.class_id, c.name || ' ' || s.name AS label
+       FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       JOIN academic_years ay ON ay.id = s.academic_year_id AND ay.is_current
+      WHERE s.branch_id = $1 AND s.deleted_at IS NULL
+      ORDER BY c.display_order, c.name, s.name`,
+    [branchId],
+  );
+  return rows;
+}
+
+/** Sections of a class in a year. */
+export async function classSectionIds(db, classId, academicYearId) {
+  const { rows } = await db.query(
+    `SELECT id FROM sections WHERE class_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL`,
+    [classId, academicYearId],
+  );
+  return rows.map((r) => r.id);
 }
 
 export async function upsertMarks(db, paper, entries, userId) {

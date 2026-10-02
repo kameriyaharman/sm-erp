@@ -2,6 +2,7 @@ import { AppError } from '../../errors/AppError.js';
 import { ROLES } from '../../config/roles.js';
 import { query } from '../../db/pool.js';
 import { resolveBranchScope } from '../../middleware/scope.js';
+import { hasSection, makeTeacherScope } from './teacher-scope.helpers.js';
 
 /**
  * Scope helpers for the school-operations modules. They extend middleware/scope.js
@@ -119,3 +120,52 @@ export const conflict = (code, message, details) => new AppError(409, code, mess
 
 /** Paging meta in the shape every list endpoint uses. */
 export const pageMeta = ({ page, limit }, total, extra = {}) => ({ page, limit, total, totalPages: Math.ceil(total / limit), ...extra });
+
+// =====================================================================
+// Teachers: subject + section scope (teacher_subject_assignments)
+// =====================================================================
+
+/**
+ * The calling teacher's current-year scope: class-teacher sections and (section, subject)
+ * assignments. A user without an active staff profile gets an empty scope.
+ * Returns makeTeacherScope(...) (see teacher-scope.helpers.js).
+ */
+export async function loadTeacherScope(db, auth) {
+  const { rows: [row] } = await db.query(
+    `SELECT sf.id AS staff_id,
+            COALESCE((SELECT array_agg(s.id)
+                        FROM sections s
+                        JOIN academic_years ay ON ay.id = s.academic_year_id AND ay.is_current
+                       WHERE s.class_teacher_id = sf.id AND s.deleted_at IS NULL), '{}') AS class_teacher_of,
+            COALESCE((SELECT json_agg(json_build_object('sectionId', a.section_id, 'subjectId', a.subject_id))
+                        FROM teacher_subject_assignments a
+                        JOIN academic_years ay ON ay.id = a.academic_year_id AND ay.is_current
+                        JOIN sections s        ON s.id = a.section_id AND s.deleted_at IS NULL
+                       WHERE a.staff_id = sf.id), '[]'::json) AS assignments
+       FROM staff_profiles sf
+       JOIN users u ON u.id = sf.user_id
+      WHERE sf.user_id = $1 AND sf.tenant_id = $2 AND sf.deleted_at IS NULL AND sf.status = 'active'`,
+    [auth.userId, auth.tenantId],
+  );
+  return makeTeacherScope({
+    staffId: row?.staff_id ?? null,
+    classTeacherOf: row?.class_teacher_of ?? [],
+    assignments: row?.assignments ?? [],
+  });
+}
+
+export const notAssigned = (message = 'You are not assigned to this class or subject') =>
+  AppError.forbidden(message, 'NOT_ASSIGNED');
+
+/**
+ * Section the caller may read: admins by branch scope; a teacher only their own sections
+ * (class teacher or teaches a subject there). Other branch -> 404, own branch but not
+ * theirs -> 403 NOT_ASSIGNED. Returns the loadSectionForStaff row (+ teacherScope for teachers).
+ */
+export async function loadSectionInScope(db, auth, sectionId) {
+  const section = await loadSectionForStaff(db, auth, sectionId);
+  if (auth.role !== ROLES.TEACHER) return section;
+  const teacherScope = await loadTeacherScope(db, auth);
+  if (!hasSection(teacherScope, section.id)) throw notAssigned('This section is not one of your classes');
+  return { ...section, teacherScope };
+}

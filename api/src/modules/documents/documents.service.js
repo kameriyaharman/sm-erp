@@ -190,7 +190,8 @@ export async function generateReportCards(auth, { sectionId, termId }) {
 
 function assertSectionAccess(auth, ctx) {
   if (auth.role === ROLES.TEACHER) {
-    if (!ctx.is_class_teacher || auth.tenantId !== ctx.tenant_id) throw AppError.forbidden('Only the class teacher can do this for the section', 'NOT_CLASS_TEACHER');
+    if (auth.tenantId !== ctx.tenant_id || auth.branchId !== ctx.branch_id) throw AppError.notFound('Section not found', 'SECTION_NOT_FOUND');
+    if (!ctx.is_class_teacher) throw AppError.forbidden('Only the class teacher can do this for the section', 'NOT_CLASS_TEACHER');
     return;
   }
   assertBranchAccess(auth, { tenantId: ctx.tenant_id, branchId: ctx.branch_id }, 'Section not found');

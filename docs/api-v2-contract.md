@@ -21,6 +21,10 @@ file in the same commit and note it at the bottom under "Changes".
   Out-of-scope single records are **404**, never 403.
 - "Current academic year" = the branch's `academic_years.is_current = true` row.
 - `ADMINS` = super_admin + branch_admin. `STAFF` = ADMINS + teacher.
+- **Teachers are limited to their own classes and subjects** (section 12, `docs/rbac.md`): a teacher's
+  sections = sections they are class teacher of + sections where they teach at least one subject
+  (`teacher_subject_assignments`). A section/record of their branch outside that scope is **403 `NOT_ASSIGNED`**;
+  another branch's id stays **404**.
 - Teacher name strings are `first_name + ' ' + last_name` from `users`.
 
 ---
@@ -109,8 +113,10 @@ motherName, guardianName, socialCategory, penNumber, apaarId, parentPhone`. Retu
 { "id": "<staff_profiles.id>", "userId": "", "name": "", "firstName": "", "lastName": "", "email": "",
   "phone": null, "role": "teacher|branch_admin|super_admin", "employeeCode": "", "designation": "",
   "department": "", "dateOfJoining": "", "status": "active",
-  "classTeacherOf": [ { "sectionId": "", "label": "Grade 5 A" } ] }
+  "classTeacherOf": [ { "sectionId": "", "label": "Grade 5 A" } ],
+  "subjects": [ { "sectionId": "", "sectionLabel": "Grade 5 A", "subjectId": "", "subjectName": "English" } ] }
 ```
+`subjects` = current-year teaching assignments (section 12).
 ### POST /staff
 `{ firstName, lastName, email, phone?, designation, department?, employeeCode?, dateOfJoining?, role: "teacher"|"branch_admin", password (min 10) }`
 - branch_admin may only create `teacher`. Email unique per tenant (409). Returns 201 with the row shape.
@@ -147,10 +153,12 @@ whole class (section null); existing papers are skipped. Returns 201 `{ data: { 
 ### PATCH /papers/:id (ADMINS) `{ examDate?, maxMarks?, passMarks?, marksLocked? }`
 
 ### GET /marks?paperId=&sectionId= (STAFF)
-`sectionId` required when the paper is class-wide. Teacher: any section of their branch.
+`sectionId` required when the paper is class-wide. Teacher: the subject teacher of that section (`canEdit: true`) or
+its class teacher (read-only, `canEdit: false`); anyone else 403 `NOT_ASSIGNED`. Admins: `canEdit: true`.
 ```json
 { "data": { "paper": { ...paper shape..., "exam": { "id": "", "name": "" } },
   "section": { "id": "", "name": "", "label": "Grade 5 A" },
+  "canEdit": true,
   "students": [ { "studentId": "", "name": "", "rollNumber": "1", "admissionNumber": "",
                   "marksObtained": 72.5 | null, "isAbsent": false, "remarks": null } ] } }
 ```
@@ -160,9 +168,13 @@ whole class (section null); existing papers are skipped. Returns 201 `{ data: { 
   An entry with `marksObtained: null` and `isAbsent: false` deletes the row (clears the mark).
 - Student must be in the paper's class (and section, if set) → otherwise 422 `STUDENT_NOT_IN_CLASS`.
 - Locked paper → 409 `PAPER_LOCKED`. Returns `{ data: { saved: n, cleared: n } }`.
+- Teacher: only students of sections where they teach the paper's subject → otherwise 403 `NOT_ASSIGNED`
+  (`details.studentIds`); a class teacher cannot edit other subjects.
 
-### Teacher shortcut: GET /teacher/papers (teacher) → papers of the current year for every class in the teacher's branch,
-same shape as `/exams/:id/papers` plus `"exam": { "id", "name", "status" }`, ordered by exam start_date desc.
+### Teacher shortcut: GET /teacher/papers (teacher) → current-year papers whose subject the teacher teaches in at least
+one section of the paper's class; same shape as `/exams/:id/papers` plus `"exam": { "id", "name", "status" }` and
+`"sections": [ { "id", "label", "canEdit" } ]` (the sections they teach it in, `canEdit: true`, plus their
+class-teacher section of that class read-only), ordered by exam start_date desc.
 
 ### Report cards for a section: GET /documents/sections/:sectionId/report-cards?termId= (STAFF)
 `termId` omitted = annual/final cards (term_id IS NULL). Teacher: class teacher only (same rule as generate).
@@ -196,19 +208,28 @@ broadcast (`sendBroadcastNotice`, targetRole parent for parents/all and teacher 
 
 ## 6. Homework: `/homework`
 
-### GET /homework?sectionId=&page=&limit= (STAFF). Teacher sees their branch; newest first.
+### GET /homework?sectionId=&page=&limit= (STAFF). Newest first.
+Teacher: only their sections (class teacher or subject teacher); a `sectionId` outside them → 403 `NOT_ASSIGNED`.
 ```json
 { "data": [ { "id": "", "section": { "id": "", "label": "Grade 5 A" }, "subject": { "id": "", "name": "" } | null,
-  "title": "", "details": "", "assignedAt": "", "dueDate": "", "teacher": { "name": "" } } ], "meta": {...} }
+  "title": "", "details": "", "assignedAt": "", "dueDate": "", "teacher": { "name": "" },
+  "createdBy": { "userId": "", "name": "Priya Nair" } | null,
+  "canEdit": true,
+  "attachments": [ { "id": "", "fileName": "Worksheet.pdf", "mimeType": "application/pdf", "sizeBytes": 41234,
+                     "url": "/api/v1/homework/attachments/<id>", "uploadedAt": "" } ] } ], "meta": {...} }
 ```
+`canEdit` = the caller may delete it and add/remove files (admins in scope; a teacher only for homework they set).
 ### POST /homework (STAFF) `{ sectionId, subjectId?, title (3-200), details? (≤4000), dueDate }` → 201 row
-### DELETE /homework/:id: the teacher who set it, or ADMINS → 204
+Teacher: `subjectId` required (400) and they must teach that subject in that section (403 `NOT_ASSIGNED`).
+Admins may still set homework without a subject. JSON only: files are uploaded afterwards, one per request.
+### DELETE /homework/:id: the teacher who set it, or ADMINS → 204 (another teacher's → 403 `NOT_OWNER`)
+### Files: see section 12.3.
 
 ---
 
 ## 7. Timetable: `/timetable`
 
-### GET /timetable?sectionId= (STAFF)
+### GET /timetable?sectionId= (STAFF; teacher: their sections only, else 403 `NOT_ASSIGNED`. Own week: `GET /teacher/timetable`)
 ```json
 { "data": { "section": { "id": "", "label": "Grade 5 A" },
   "days": { "1": [ { "periodNo": 1, "start": "08:00", "end": "08:40", "kind": "class|break|assembly|activity",
@@ -258,7 +279,8 @@ Oldest first, months of the current academic year up to the current month (zero-
 ## 10. Attendance history (STAFF)
 
 ### GET /academics/attendance/history?sectionId=&month=YYYY-MM
-Teacher: sections of their branch. From `attendance_submissions` + `student_attendance`.
+Teacher: their class-teacher and subject sections (else 403 `NOT_ASSIGNED`). Marking attendance (roster GET / POST)
+stays class teacher only (403 `NOT_CLASS_TEACHER`). From `attendance_submissions` + `student_attendance`.
 ```json
 { "data": { "section": { "id": "", "label": "Grade 5 A" }, "month": "2026-09",
   "days": [ { "date": "2026-09-01", "total": 15, "present": 13, "absent": 1, "late": 1, "leave": 0, "halfDay": 0, "submittedAt": "" } ],
@@ -272,7 +294,8 @@ Days without a register are omitted. `percentage` = (present + late + 0.5·halfD
 
 ### GET /parent/home (existing): now also fills
 - `timetable`: `{ "1": Period[], ... "6": Period[] }` from the section timetable (Period = `{ id, start, end, kind, subject, teacher?, room? }` as in `web/src/features/parent/types.ts`; `subject` = label).
-- `homework`: latest 5 for the child's section (`HomeworkItem`, `attachments: []`).
+- `homework`: latest 5 for the child's section (`HomeworkItem`); `attachments: [ { name, url, sizeKb } ]`
+  (`url` = `/api/v1/homework/attachments/<id>`, needs the parent's bearer token).
 - `bus`: `{ routeName, stopName, state: "not_running", etaMinutes: null, updatedAt, pickupTime, dropTime, driverName, driverPhone, vehicleNumber }` or null.
 
 ### GET /parent/children/:studentId/fees
@@ -295,12 +318,86 @@ Online pay (existing): `POST /finance/create-order { invoiceIds }`; receipt PDF:
   "summary": { "workingDays": 22, "present": 20, "absent": 1, "late": 1, "leave": 0, "halfDay": 0, "percentage": 95.5 },
   "year": { "workingDays": 70, "present": 64, "absent": 3, "late": 2, "leave": 1, "halfDay": 0, "percentage": 94.3 } } }
 ```
-### GET /parent/children/:studentId/homework?page=&limit= → same row shape as `/homework`, `meta` paging
+### GET /parent/children/:studentId/homework?page=&limit= → same row shape as `/homework` (with `attachments`, `canEdit: false`), `meta` paging
 ### GET /parent/children/:studentId/timetable → same as `/timetable` GET
 ### GET /parent/children/:studentId/transport →
 `{ data: { route: { name, vehicleNumber, driverName, driverPhone, attendantName }, stop: { name, pickupTime, dropTime }, stops: [ { name, pickupTime, dropTime, isMine } ] } | null }`
 ### Report cards (existing): `GET /documents/students/:studentId/report-cards`, PDF `GET /documents/report-cards/:id/pdf`.
 ### Notices: `GET /notices` (parent rules above).
+
+---
+
+## 12. Teacher subject assignments and homework files (migration `010`)
+
+One teacher per subject per section per academic year (`teacher_subject_assignments`, UNIQUE
+`(academic_year_id, section_id, subject_id)`). The class teacher (`sections.class_teacher_id`) is separate and unchanged.
+
+### 12.1 Managing assignments (ADMINS)
+
+#### GET /staff/:id/assignments → current-year assignments of one staff member
+```json
+{ "data": [ { "id": "", "section": { "id": "", "label": "Grade 5 A" }, "subject": { "id": "", "name": "English", "code": "ENG" } } ] }
+```
+#### PUT /staff/:id/assignments
+`{ "assignments": [ { "sectionId": "", "subjectId": "" } ] (max 200), "reassign": false }` → replaces that teacher's
+current-year assignments; returns the GET shape. Duplicate pairs are ignored. `[]` clears them.
+- A pair already taught by **another** teacher → 409 `SUBJECT_TAKEN`, message names the teacher,
+  `details.conflicts: [ { section: { id, label }, subject: { id, name }, teacher: { staffId, name } } ]`.
+  With `reassign: true` the pair moves to this teacher instead.
+- Not a teacher account → 422 `NOT_A_TEACHER`; inactive teacher (non-empty list) → 422 `STAFF_INACTIVE`;
+  section not of the current year / other branch, or inactive subject → 422 `INVALID_REFERENCE`
+  (`details.sectionIds`, `details.subjectIds`); staff outside the admin's scope → 404.
+
+#### GET /school/assignments?sectionId= (STAFF) → who teaches each subject in a section
+All active subjects of the branch, in display order:
+```json
+{ "data": [ { "subject": { "id": "", "name": "English", "code": "ENG" }, "teacher": { "staffId": "", "name": "Priya Nair" } | null } ] }
+```
+
+### 12.2 The signed-in teacher (teacher role only)
+
+#### GET /teacher/assignments
+```json
+{ "data": { "classTeacherOf": [ { "sectionId": "", "label": "Grade 5 A" } ],
+            "subjects": [ { "section": { "id": "", "label": "Grade 5 A" }, "subject": { "id": "", "name": "English", "code": "ENG" } } ] } }
+```
+Use it for the teacher's pickers (homework section + subject, marks, timetable) instead of `/school/classes`.
+
+#### GET /teacher/timetable → the teacher's own week across sections
+```json
+{ "data": { "teacher": { "staffId": "", "name": "Priya Nair" },
+            "days": { "1": [ { "periodNo": 3, "start": "09:00", "end": "09:40", "kind": "class", "subject": { "id": "", "name": "English" },
+                               "label": "English", "teacher": { "staffId": "", "name": "" }, "room": "R-501",
+                               "section": { "id": "", "label": "Grade 5 A" } } ], "2": [], ... "6": [] } } }
+```
+Periods are those whose `teacherStaffId` is the caller (set by `PUT /timetable`). Keys "1".."6" always present.
+
+#### GET /teacher/papers: see section 4 (now filtered to the teacher's subjects, with `sections`).
+
+### 12.3 Homework files
+
+Stored in Postgres (`homework_attachments.data`, bytea). At most **5 files** per homework, **5 MB** each.
+Allowed: `pdf, jpg, jpeg, png, webp, doc, docx, xls, xlsx, ppt, pptx, txt`. Extension, declared MIME type and content
+must agree (magic bytes: `%PDF-`, PNG, JPEG, RIFF/WEBP, OLE `D0 CF 11 E0` for doc/xls/ppt, ZIP `PK` + `word/`|`xl/`|`ppt/`
+for docx/xlsx/pptx; txt = valid UTF-8 without NUL bytes). For Office files `application/octet-stream` is accepted as the
+declared type (some browsers send it) when the bytes match. The stored type is the canonical one for the extension.
+File names are sanitised (no path, control or reserved characters, max 150 chars; Unicode kept).
+
+#### POST /homework/:id/attachments (STAFF: the teacher who set the homework, or ADMINS)
+`multipart/form-data`, exactly one file in the field **`file`**. → **201** `{ data: attachment }`
+(`{ id, fileName, mimeType, sizeBytes, url, uploadedAt }`).
+Errors: 413 `FILE_TOO_LARGE`, 415 `FILE_TYPE_NOT_ALLOWED`, 409 `TOO_MANY_FILES`, 403 `NOT_OWNER`, 404 homework not
+found/out of scope, 400 `VALIDATION_ERROR` (no file / wrong field / more than one file), 400 `INVALID_UPLOAD` (malformed body).
+Permission and the file count are checked before the body is read.
+
+#### GET /homework/attachments/:id (STAFF + parent) → the file bytes
+Headers: `Content-Type` (stored type), `Content-Length`, `Content-Disposition: attachment; filename="<ascii>"; filename*=UTF-8''<name>`,
+`X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`, `Content-Security-Policy: default-src 'none'; sandbox`.
+Access: admins in scope; teacher: their sections (or homework they set), else 403 `NOT_ASSIGNED`; parent: only when one
+of their children is in the homework's section, else **404**. Other branch/tenant → 404. Bearer token required, so the
+web app downloads with `fetch` + blob (a plain `<a href>` sends no Authorization header).
+
+#### DELETE /homework/attachments/:id (STAFF: the homework's creator, or ADMINS) → 204
 
 ---
 
@@ -342,3 +439,32 @@ behaviour the contract left open; no field was renamed or removed.
 - **GET /parent/children/:id/timetable** for a child with no section: `{ "section": null, "days": { "1": [], ... } }`.
 - **Parent home `timetable`** periods also omit `teacher` / `room` when not set; homework without a subject shows
   `subject: "General"`; `bus.updatedAt` is the response time (no live tracking yet).
+
+### Teacher subject assignments, RBAC and homework files (migration `010_teacher_assignments_attachments.sql`)
+
+Client requirement: a teacher may only act on the subjects and sections assigned to them, enforced on the server;
+homework gets file attachments. Full matrix: `docs/rbac.md`.
+
+- **New**: section 12 (`GET/PUT /staff/:id/assignments`, `GET /school/assignments`, `GET /teacher/assignments`,
+  `GET /teacher/timetable`, `POST /homework/:id/attachments`, `GET|DELETE /homework/attachments/:id`).
+- **New error codes**: 403 `NOT_ASSIGNED` (teacher, own branch, not their section/subject), 409 `SUBJECT_TAKEN`,
+  422 `NOT_A_TEACHER`, 422 `STAFF_INACTIVE`, 413 `FILE_TOO_LARGE`, 415 `FILE_TYPE_NOT_ALLOWED`, 409 `TOO_MANY_FILES`,
+  400 `INVALID_UPLOAD`.
+- **Changed shapes (additive)**: `/staff` rows + `subjects`; `/homework` (and `/parent/children/:id/homework`) rows +
+  `createdBy`, `canEdit`, `attachments`; `GET /marks` + `canEdit`; `/teacher/papers` rows + `sections`;
+  parent home `homework[].attachments` now filled (`{ name, url, sizeKb }`).
+- **Teacher scope tightened** (was: whole branch):
+  - `POST /homework`: `subjectId` required for teachers + must be an assigned (section, subject).
+  - `GET /homework`, `GET /students`, `GET /students/:id`, `GET /timetable`, `GET /academics/attendance/history`:
+    only the teacher's sections (class teacher or any subject there).
+  - `GET /marks`: subject teacher (edit) or class teacher (read-only); `PUT /marks`: subject teacher only, and only
+    students of the sections they teach that subject in.
+  - `/teacher/papers`: only papers of their subjects.
+- **404 vs 403 for teachers**: attendance roster/submit and section report cards now return 404 (not 403
+  `NOT_CLASS_TEACHER`) for a section of another branch; a section of their own branch they are not class teacher of is
+  still 403 `NOT_CLASS_TEACHER`.
+- **Unchanged for teachers** (school-wide reference data, no student records): `/school/classes|subjects|terms`,
+  `/school/assignments`, `GET /exams`, `GET /exams/:id/papers`, `GET /notices` (audience all|teachers).
+- Uploads use `multer` (memory storage, streamed 5 MB limit); the global JSON body limit (100 kb) is unchanged and
+  `express.json()` ignores multipart bodies.
+

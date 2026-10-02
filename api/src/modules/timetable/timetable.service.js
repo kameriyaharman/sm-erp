@@ -1,6 +1,6 @@
 import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
-import { conflict, loadSectionForStaff, unprocessable } from '../shared/access.js';
+import { conflict, loadSectionForStaff, loadSectionInScope, unprocessable } from '../shared/access.js';
 import { emptyWeek, overlaps, validateTimetable } from '../shared/school-ops.helpers.js';
 import * as repo from './timetable.repository.js';
 
@@ -34,8 +34,9 @@ export async function sectionTimetable(section) {
   };
 }
 
+/** Teacher: only their sections (class teacher or subject teacher); see /teacher/timetable for their own week. */
 export async function getTimetable(auth, { sectionId }) {
-  return sectionTimetable(await loadSectionForStaff(pool, auth, sectionId));
+  return sectionTimetable(await loadSectionInScope(pool, auth, sectionId));
 }
 
 const invalid = (issues) => AppError.badRequest(

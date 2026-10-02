@@ -7,7 +7,7 @@ import { idParams } from '../shared/schemas.js';
 import * as schemas from './students.schemas.js';
 import * as controller from './students.controller.js';
 
-// Student register. Teachers read their branch; only the school office admits or edits.
+// Student register. Teachers read the students of their own sections; only the school office admits or edits.
 const router = Router();
 router.use(authenticate);
 

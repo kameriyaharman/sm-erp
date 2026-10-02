@@ -4,7 +4,11 @@ import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
 import { logger } from '../../utils/logger.js';
 import { normalizePhone } from '../notifications/phone.js';
-import { assertStaffAccess, conflict, pageMeta, staffScope, unprocessable } from '../shared/access.js';
+import { ROLES } from '../../config/roles.js';
+import {
+  assertStaffAccess, conflict, loadSectionInScope, loadTeacherScope, notAssigned, pageMeta, staffScope, unprocessable,
+} from '../shared/access.js';
+import { hasSection } from '../shared/teacher-scope.helpers.js';
 import { attendanceStats, likePattern, nextRollNumber, nextSequenceCode, splitName } from '../shared/school-ops.helpers.js';
 import * as repo from './students.repository.js';
 
@@ -44,9 +48,15 @@ function mapListRow(r) {
 // Queries
 // =====================================================================
 
+/** Teacher: only students of their sections (class teacher or subject teacher). */
 export async function listStudents(auth, { branchId, search, ...filters }) {
   const scope = await staffScope(auth, { branchId });
-  const rows = await repo.listStudents({ scope, filters, like: likePattern(search) });
+  let sectionIds = null;
+  if (auth.role === ROLES.TEACHER) {
+    if (filters.sectionId) await loadSectionInScope(pool, auth, filters.sectionId);
+    sectionIds = [...(await loadTeacherScope(pool, auth)).sectionIds];
+  }
+  const rows = await repo.listStudents({ scope, filters, like: likePattern(search), sectionIds });
   const total = rows.length ? Number(rows[0].total_count) : 0;
   return { data: rows.map(mapListRow), meta: pageMeta(filters, total) };
 }
@@ -110,6 +120,9 @@ async function buildDetail(db, s) {
 export async function getStudent(auth, studentId) {
   const s = await repo.getStudent(pool, studentId);
   assertStaffAccess(auth, s, 'Student not found', 'STUDENT_NOT_FOUND');
+  if (auth.role === ROLES.TEACHER && !(s.section_id && hasSection(await loadTeacherScope(pool, auth), s.section_id))) {
+    throw notAssigned('This student is not in one of your classes');
+  }
   return buildDetail(pool, s);
 }
 

@@ -10,7 +10,8 @@ import notificationRoutes from './modules/notifications/notifications.routes.js'
 import schoolRoutes from './modules/school/school.routes.js';
 import studentRoutes from './modules/students/students.routes.js';
 import staffRoutes from './modules/staff/staff.routes.js';
-import { examsRouter, marksRouter, papersRouter, teacherRouter } from './modules/exams/exams.routes.js';
+import { examsRouter, marksRouter, papersRouter } from './modules/exams/exams.routes.js';
+import teacherRoutes from './modules/teacher/teacher.routes.js';
 import noticeRoutes from './modules/notices/notices.routes.js';
 import homeworkRoutes from './modules/homework/homework.routes.js';
 import timetableRoutes from './modules/timetable/timetable.routes.js';
@@ -35,7 +36,7 @@ router.use('/staff', staffRoutes);
 router.use('/exams', examsRouter);
 router.use('/papers', papersRouter);
 router.use('/marks', marksRouter);
-router.use('/teacher', teacherRouter);
+router.use('/teacher', teacherRoutes);
 router.use('/notices', noticeRoutes);
 router.use('/homework', homeworkRoutes);
 router.use('/timetable', timetableRoutes);

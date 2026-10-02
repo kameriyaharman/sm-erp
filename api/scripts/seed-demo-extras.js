@@ -10,6 +10,11 @@
  *   phase 1 (one transaction)  skipped when the demo branch already has subjects
  *   phase 2 (report cards)     skipped when the demo school has a published report card
  *   phase 3 (bonafides)        skipped when the demo school has a bonafide certificate
+ *   phase 4 (subject teachers) skipped when the demo school has any teacher_subject_assignments:
+ *     three more teacher logins (DEMO_PASSWORD): maths@, science@, hindi@demo.school;
+ *     one teacher per subject per section (teacher@ = English in 5 A and 6 A, still class
+ *     teacher of 5 A); timetable teachers follow the assignments (no double booking); the
+ *     phase-1 homework is re-attributed to its subject teacher; two homework items get a PDF.
  * Set-based INSERT ... SELECT throughout: the live database is far away.
  */
 import bcrypt from 'bcryptjs';
@@ -17,7 +22,10 @@ import { randomUUID } from 'node:crypto';
 import { env } from '../src/config/env.js';
 import { pool, withTransaction } from '../src/db/pool.js';
 import { logger } from '../src/utils/logger.js';
+import PDFDocument from 'pdfkit';
 import { generateReportCards, issueBonafide, publishReportCards } from '../src/modules/documents/documents.service.js';
+import { nextSequenceCode } from '../src/modules/shared/school-ops.helpers.js';
+import { teacherClashes } from '../src/modules/shared/teacher-scope.helpers.js';
 
 if (process.env.SEED_DEMO !== 'true') {
   logger.info('Demo extras skipped (SEED_DEMO is not "true")');
@@ -417,6 +425,200 @@ async function phaseThree(demo) {
 }
 
 // =====================================================================
+// Phase 4: subject teachers (teacher_subject_assignments), timetable, homework files
+// =====================================================================
+
+// New teacher logins (password DEMO_PASSWORD).
+const NEW_TEACHERS = [
+  { key: 'maths', email: 'maths@demo.school', first: 'Neha', last: 'Gupta', phone: '+919810088881', designation: 'TGT Mathematics', qualification: 'M.Sc. Mathematics, B.Ed.' },
+  { key: 'science', email: 'science@demo.school', first: 'Arvind', last: 'Mehta', phone: '+919810088882', designation: 'TGT Science', qualification: 'M.Sc. Chemistry, B.Ed.' },
+  { key: 'hindi', email: 'hindi@demo.school', first: 'Kavita', last: 'Joshi', phone: '+919810088883', designation: 'TGT Hindi', qualification: 'M.A. Hindi, B.Ed.' },
+];
+// Subject code -> teacher key; the same teacher for every section. Keys of existing staff are their emails.
+const SUBJECT_TEACHER = {
+  ENG: 'teacher@demo.school',          // Priya Nair, class teacher of 5 A
+  SST: 'teacher2@demo.school',         // Rajesh Kumar, class teacher of 6 A
+  MAT: 'maths',
+  SCI: 'science',
+  HIN: 'hindi',
+  ART: 'sunita.rao@demo.school',
+  DISC: 'sunita.rao@demo.school',
+  PHE: 'imran.qureshi@demo.school',
+};
+
+async function phaseFour(demo) {
+  const { rows: done } = await pool.query(`SELECT 1 FROM teacher_subject_assignments WHERE tenant_id = $1 LIMIT 1`, [demo.tenantId]);
+  if (done.length) return null;
+  const { rows: subjectRows } = await pool.query(`SELECT id, code FROM subjects WHERE branch_id = $1 AND status = 'active'`, [demo.branch_id]);
+  if (subjectRows.length === 0 || demo.sections.length === 0) return null;
+
+  const password = process.env.DEMO_PASSWORD ?? '';
+  const loginHash = await bcrypt.hash(password.length >= 10 ? password : randomUUID(), 12);
+  if (password.length < 10) logger.warn('DEMO_PASSWORD not set: the new demo teachers cannot sign in');
+  const pdfs = await Promise.all([
+    worksheetPdf('Letter writing: format guide', ['Sender\'s address and date', 'Salutation (Dear ...)', 'Body: three short paragraphs', 'Closing (Yours lovingly / sincerely)', 'Your name']),
+    worksheetPdf('Practice worksheet: decimals', ['0.5 + 0.25 =', '1.75 - 0.8 =', '2.4 x 3 =', '7.2 / 0.9 =', 'Write 3/4 as a decimal']),
+  ]);
+
+  return withTransaction(async (db) => {
+    const q = (text, params) => db.query(text, params);
+    const T = demo.tenantId;
+    const B = demo.branch_id;
+    const out = { teachersCreated: [] };
+
+    // ---- teacher logins (reuse an existing teacher with that email)
+    const staffByKey = {};
+    const { rows: existing } = await q(
+      `SELECT u.email, u.role, sf.id AS staff_id, sf.user_id FROM users u LEFT JOIN staff_profiles sf ON sf.user_id = u.id AND sf.branch_id = $2
+        WHERE u.tenant_id = $1 AND u.deleted_at IS NULL AND u.email = ANY ($3)`,
+      [T, B, [...NEW_TEACHERS.map((t) => t.email), ...Object.values(SUBJECT_TEACHER).filter((k) => k.includes('@'))]],
+    );
+    const byEmail = Object.fromEntries(existing.map((r) => [r.email, r]));
+    const { rows: codes } = await q(`SELECT employee_code FROM staff_profiles WHERE branch_id = $1 ORDER BY created_at DESC, employee_code DESC`, [B]);
+    const taken = new Set(codes.map((c) => c.employee_code.toLowerCase()));
+    let code = nextSequenceCode(codes.map((c) => c.employee_code), 'EMP-101');
+    for (const t of NEW_TEACHERS) {
+      const found = byEmail[t.email];
+      if (found) {
+        if (found.role === 'teacher' && found.staff_id) staffByKey[t.key] = { id: found.staff_id, user_id: found.user_id };
+        continue;
+      }
+      while (taken.has(code.toLowerCase())) code = nextSequenceCode([code]);
+      taken.add(code.toLowerCase());
+      const { rows: [u] } = await q(
+        `INSERT INTO users (tenant_id, branch_id, role, email, phone, password_hash, first_name, last_name)
+         VALUES ($1, $2, 'teacher', $3, $4, $5, $6, $7) RETURNING id`,
+        [T, B, t.email, t.phone, loginHash, t.first, t.last],
+      );
+      const { rows: [sf] } = await q(
+        `INSERT INTO staff_profiles (user_id, tenant_id, branch_id, employee_code, designation, department, date_of_joining, qualification)
+         VALUES ($1, $2, $3, $4, $5, 'Middle', '2024-04-01', $6) RETURNING id`,
+        [u.id, T, B, code, t.designation, t.qualification],
+      );
+      staffByKey[t.key] = { id: sf.id, user_id: u.id };
+      out.teachersCreated.push(t.email);
+    }
+    for (const r of existing) if (r.role === 'teacher' && r.staff_id && !staffByKey[r.email]) staffByKey[r.email] = { id: r.staff_id, user_id: r.user_id };
+
+    // Fallback for a missing teacher: the class teacher of the section.
+    const subjectId = Object.fromEntries(subjectRows.map((r) => [r.code, r.id]));
+    const ctStaff = Object.fromEntries(demo.staff.map((s) => [s.id, s]));
+    const teacherFor = (code, section) => staffByKey[SUBJECT_TEACHER[code]] ?? ctStaff[section.class_teacher_id] ?? null;
+
+    // ---- assignments: every active subject of every current section
+    const pairs = [];
+    for (const section of demo.sections) {
+      for (const { code, id } of subjectRows) {
+        const t = SUBJECT_TEACHER[code] ? teacherFor(code, section) : ctStaff[section.class_teacher_id];
+        if (t) pairs.push({ sectionId: section.id, subjectId: id, staffId: t.id, userId: t.user_id });
+      }
+    }
+    const { rowCount: assigned } = await q(
+      `INSERT INTO teacher_subject_assignments (tenant_id, branch_id, academic_year_id, staff_id, section_id, subject_id, assigned_by)
+       SELECT $1, $2, $3, x.staff, x.section, x.subject, $4
+         FROM unnest($5::uuid[], $6::uuid[], $7::uuid[]) AS x(staff, section, subject)
+       ON CONFLICT ON CONSTRAINT uq_tsa_section_subject DO NOTHING`,
+      [T, B, demo.year_id, demo.admin_id, pairs.map((p) => p.staffId), pairs.map((p) => p.sectionId), pairs.map((p) => p.subjectId)],
+    );
+    out.assignments = assigned;
+    const teacherOfPair = new Map(pairs.map((p) => [`${p.sectionId}:${p.subjectId}`, p]));
+
+    // ---- timetable: the subject teacher takes each period; then remove double bookings by
+    // swapping periods within the same section and day (or, failing that, leaving the slot without a teacher).
+    const { rows: periodRows } = await q(
+      `SELECT tp.id, tp.section_id, tp.weekday, tp.period_no, tp.kind, tp.subject_id, tp.teacher_staff_id
+         FROM timetable_periods tp JOIN sections s ON s.id = tp.section_id
+        WHERE s.branch_id = $1 AND s.academic_year_id = $2 AND s.deleted_at IS NULL
+        ORDER BY tp.section_id, tp.weekday, tp.period_no`,
+      [B, demo.year_id],
+    );
+    const periods = periodRows.map((p) => ({
+      id: p.id, sectionId: p.section_id, weekday: p.weekday, periodNo: p.period_no, kind: p.kind, subjectId: p.subject_id,
+      teacherStaffId: p.subject_id ? teacherOfPair.get(`${p.section_id}:${p.subject_id}`)?.staffId ?? p.teacher_staff_id : p.teacher_staff_id,
+      original: { subjectId: p.subject_id, teacherStaffId: p.teacher_staff_id },
+    }));
+    let unresolved = 0;
+    for (let guard = 0; guard < 500; guard += 1) {
+      const clashes = teacherClashes(periods);
+      if (clashes.length === 0) break;
+      const [, p] = clashes[0];
+      const before = clashes.length;
+      const swapWith = periods.filter((o) => o.sectionId === p.sectionId && o.weekday === p.weekday && o.id !== p.id && o.subjectId && o.kind === p.kind);
+      let fixed = false;
+      for (const o of swapWith) {
+        [p.subjectId, o.subjectId, p.teacherStaffId, o.teacherStaffId] = [o.subjectId, p.subjectId, o.teacherStaffId, p.teacherStaffId];
+        if (teacherClashes(periods).length < before) { fixed = true; break; }
+        [p.subjectId, o.subjectId, p.teacherStaffId, o.teacherStaffId] = [o.subjectId, p.subjectId, o.teacherStaffId, p.teacherStaffId];
+      }
+      if (!fixed) { p.teacherStaffId = null; unresolved += 1; }
+    }
+    const changed = periods.filter((p) => p.subjectId !== p.original.subjectId || p.teacherStaffId !== p.original.teacherStaffId);
+    if (changed.length) {
+      await q(
+        `UPDATE timetable_periods tp SET subject_id = x.subject, teacher_staff_id = x.teacher
+           FROM unnest($1::uuid[], $2::uuid[], $3::uuid[]) AS x(id, subject, teacher)
+          WHERE tp.id = x.id`,
+        [changed.map((p) => p.id), changed.map((p) => p.subjectId), changed.map((p) => p.teacherStaffId)],
+      );
+    }
+    out.periodsUpdated = changed.length;
+    if (unresolved) out.periodsWithoutTeacher = unresolved;
+
+    // ---- phase-1 homework (created with the subjects) belongs to its subject teacher
+    const { rowCount: rehomed } = await q(
+      `UPDATE homework h SET created_by = x.user_id
+         FROM unnest($2::uuid[], $3::uuid[], $4::uuid[]) AS x(section, subject, user_id)
+        WHERE h.branch_id = $1 AND h.section_id = x.section AND h.subject_id = x.subject
+          AND h.created_at = (SELECT min(created_at) FROM subjects WHERE branch_id = $1)
+          AND h.created_by IS DISTINCT FROM x.user_id`,
+      [B, pairs.map((p) => p.sectionId), pairs.map((p) => p.subjectId), pairs.map((p) => p.userId)],
+    );
+    out.homeworkReassigned = rehomed;
+
+    // ---- two homework items get a small PDF: latest English of the first section, latest Maths of the second
+    const targets = [
+      [demo.sections[0], 'ENG', 'Letter-writing-format.pdf', pdfs[0]],
+      [demo.sections[1] ?? demo.sections[0], 'MAT', 'Decimals-practice-worksheet.pdf', pdfs[1]],
+    ];
+    out.attachments = 0;
+    for (const [section, subjectCode, fileName, data] of targets) {
+      const { rows: [hw] } = await q(
+        `SELECT h.id, h.created_by FROM homework h
+          WHERE h.section_id = $1 AND h.subject_id = $2 AND h.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM homework_attachments a WHERE a.homework_id = h.id)
+          ORDER BY h.assigned_at DESC LIMIT 1`,
+        [section.id, subjectId[subjectCode]],
+      );
+      if (!hw) continue;
+      await q(
+        `INSERT INTO homework_attachments (homework_id, tenant_id, branch_id, file_name, mime_type, size_bytes, data, uploaded_by)
+         VALUES ($1, $2, $3, $4, 'application/pdf', $5, $6, $7)`,
+        [hw.id, T, B, fileName, data.length, data, hw.created_by],
+      );
+      out.attachments += 1;
+    }
+    return out;
+  });
+}
+
+/** A one-page worksheet PDF (a few KB). */
+function worksheetPdf(title, lines) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 56, info: { Title: title, Author: 'Demo Public School' } });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    doc.font('Helvetica-Bold').fontSize(18).text('Demo Public School', { align: 'center' });
+    doc.moveDown(0.3).font('Helvetica').fontSize(13).text(title, { align: 'center' });
+    doc.moveDown(1.2).fontSize(11);
+    lines.forEach((line, i) => doc.text(`${i + 1}.  ${line}`).moveDown(0.6));
+    doc.moveDown(1).fontSize(9).fillColor('#666').text('Complete in your notebook and bring it to the next class.');
+    doc.end();
+  });
+}
+
+// =====================================================================
 // Run (at the end: the constants above must be initialised first)
 // =====================================================================
 
@@ -430,6 +632,7 @@ try {
     summary.phase1 = (await phaseOne(demo)) ?? 'skipped';
     summary.phase2 = (await phaseTwo(demo)) ?? 'skipped';
     summary.phase3 = (await phaseThree(demo)) ?? 'skipped';
+    summary.phase4 = (await phaseFour(demo)) ?? 'skipped';
     logger.info('Demo extras ready', summary);
   }
   await pool.end();

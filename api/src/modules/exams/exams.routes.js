@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { ROLES } from '../../config/roles.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { validate } from '../../middleware/validate.js';
@@ -22,13 +21,8 @@ export const papersRouter = Router();
 papersRouter.use(authenticate, authorize(ADMINS));
 papersRouter.patch('/:id', validate({ params: idParams, body: s.updatePaperBody }), controller.updatePaper);
 
-/** /marks: marks entry for one paper and section. Teachers: any section of their branch. */
+/** /marks: marks entry for one paper and section. Teachers: subject teacher edits, class teacher views (service). */
 export const marksRouter = Router();
 marksRouter.use(authenticate, authorize(STAFF));
 marksRouter.get('/', validate({ query: s.marksQuery }), controller.getMarks);
 marksRouter.put('/', validate({ body: s.saveMarksBody }), controller.saveMarks);
-
-/** /teacher: teacher shortcuts. */
-export const teacherRouter = Router();
-teacherRouter.use(authenticate, authorize(ROLES.TEACHER));
-teacherRouter.get('/papers', controller.listTeacherPapers);

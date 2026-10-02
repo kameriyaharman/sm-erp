@@ -23,6 +23,7 @@ function mapStaff(r) {
     dateOfJoining: r.date_of_joining,
     status: r.status,
     classTeacherOf: r.class_teacher_of,
+    subjects: r.subjects,
   };
 }
 

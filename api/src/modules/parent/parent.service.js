@@ -1,6 +1,8 @@
 import { query } from '../../db/pool.js';
 import { emptyWeek } from '../shared/school-ops.helpers.js';
 import { periodLabel } from '../timetable/timetable.service.js';
+import { attachmentsFor } from '../homework/homework.repository.js';
+import { attachmentUrl } from '../homework/homework.service.js';
 
 /**
  * Parent app home: one entry per child linked to this parent (primary parent or guardian).
@@ -136,6 +138,7 @@ async function latestHomeworkFor(sectionIds) {
       ORDER BY x.assigned_at DESC`,
     [sectionIds],
   );
+  const files = await attachmentsFor(null, rows.map((h) => h.id));
   for (const h of rows) {
     if (!out.has(h.section_id)) out.set(h.section_id, []);
     out.get(h.section_id).push({
@@ -146,7 +149,11 @@ async function latestHomeworkFor(sectionIds) {
       teacher: h.teacher_name || '',
       assignedAt: h.assigned_at,
       dueDate: h.due_date,
-      attachments: [],
+      attachments: (files.get(h.id) ?? []).map((a) => ({
+        name: a.file_name,
+        url: attachmentUrl(a.id),
+        sizeKb: Math.max(1, Math.round(a.size_bytes / 1024)),
+      })),
     });
   }
   return out;
