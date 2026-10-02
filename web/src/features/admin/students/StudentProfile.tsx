@@ -113,10 +113,10 @@ export default function StudentProfile() {
       )}
       {flash.node}
 
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-line bg-surface p-4">
         <Avatar name={s.name} size="lg" />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Parent</p>
+          <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Parent</p>
           {s.parent ? (
             <p className="flex flex-wrap items-center gap-x-3 text-sm">
               <span className="font-medium">{s.parent.name}</span>
@@ -133,9 +133,9 @@ export default function StudentProfile() {
         </div>
         {s.transport && (
           <div className="text-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Bus</p>
+            <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Bus</p>
             <p>
-              {s.transport.routeName} · {s.transport.stopName}
+              {s.transport.routeName}, {s.transport.stopName}
             </p>
           </div>
         )}
@@ -234,7 +234,7 @@ export default function StudentProfile() {
                   ] as const
                 ).map(([k, v]) => (
                   <div key={k}>
-                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{k}</dt>
+                    <dt className="text-13 font-medium text-slate-500 dark:text-slate-400">{k}</dt>
                     <dd className="text-lg font-semibold tabular-nums">{v}</dd>
                   </div>
                 ))}
@@ -518,7 +518,7 @@ function FeesTab({ studentId, reloadKey, canCollect, onCollect, admissionNumber 
         )}
       </Card>
       {d && d.notYetInvoiced.allocations.length > 0 && (
-        <Card title={`Upcoming instalments · ${formatInr(d.notYetInvoiced.amount)}`} padded={false}>
+        <Card title={`Upcoming instalments, ${formatInr(d.notYetInvoiced.amount)}`} padded={false}>
           <Table>
             <thead>
               <tr>

@@ -74,8 +74,8 @@ export default function TransportPage() {
 function RouteCard({ route: r, onEdit, onRiders }: { route: TransportRoute; onEdit: () => void; onRiders: () => void }) {
   const full = r.capacity ? r.studentCount >= r.capacity : false;
   return (
-    <section className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+    <section className="flex min-w-0 flex-col rounded-xl border border-line bg-surface">
+      <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
         <div className="min-w-0">
           <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold">
             {r.name}
@@ -89,13 +89,13 @@ function RouteCard({ route: r, onEdit, onRiders }: { route: TransportRoute; onEd
       </header>
       <div className="grid grid-cols-1 gap-4 px-5 py-4 text-sm sm:grid-cols-2">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Driver</p>
+          <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Driver</p>
           <p className="font-medium">{r.driverName}</p>
           <PhoneLink phone={r.driverPhone} className="text-sm" />
           {r.attendantName && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Attendant: {r.attendantName}</p>}
         </div>
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Seats used</p>
+          <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Seats used</p>
           <p className="font-medium tabular-nums">
             {r.studentCount}
             {r.capacity ? ` of ${r.capacity}` : ' riders'}
@@ -108,7 +108,7 @@ function RouteCard({ route: r, onEdit, onRiders }: { route: TransportRoute; onEd
           {r.capacity ? <ProgressBar value={r.studentCount} max={r.capacity} tone={full ? 'red' : r.studentCount / r.capacity > 0.85 ? 'amber' : 'indigo'} label="Seats used" /> : null}
         </div>
       </div>
-      <ol className="relative mx-5 mb-4 border-l-2 border-slate-200 dark:border-slate-700" aria-label="Stops">
+      <ol className="relative mx-5 mb-4 border-l-2 border-line dark:border-slate-700" aria-label="Stops">
         {r.stops.map((s) => (
           <li key={s.id} className="relative mb-3 ml-4 last:mb-0">
             <span className="absolute -left-[1.4rem] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-indigo-500 dark:border-slate-900" aria-hidden />
@@ -117,7 +117,7 @@ function RouteCard({ route: r, onEdit, onRiders }: { route: TransportRoute; onEd
                 {s.sequenceNo}. {s.name}
               </p>
               <p className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
-                Pickup {formatTime(s.pickupTime) || '-'} · Drop {formatTime(s.dropTime) || '-'}
+                Pickup {formatTime(s.pickupTime) || '-'}, Drop {formatTime(s.dropTime) || '-'}
                 <span className="ml-2 inline-flex items-center gap-0.5">
                   <Users className="h-3 w-3" aria-hidden />
                   {s.studentCount}
@@ -127,7 +127,7 @@ function RouteCard({ route: r, onEdit, onRiders }: { route: TransportRoute; onEd
           </li>
         ))}
       </ol>
-      <footer className="mt-auto border-t border-slate-100 px-5 py-3 dark:border-slate-800">
+      <footer className="mt-auto border-t border-line px-5 py-3">
         <Button size="sm" variant="secondary" icon={<Users className="h-3.5 w-3.5" aria-hidden />} onClick={onRiders}>
           Students ({r.studentCount})
         </Button>
@@ -263,7 +263,7 @@ function RouteModal({ route, open, onClose, onSaved }: { route: TransportRoute |
           {route && <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Stops are matched by name. A stop with students on it can be renamed only after moving them.</p>}
           <ol className="space-y-2">
             {stops.map((s, i) => (
-              <li key={s.key} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <li key={s.key} className="rounded-lg border border-line p-3 dark:border-slate-700">
                 <div className="flex flex-wrap items-end gap-2">
                   <span className="mb-2 w-6 text-sm font-semibold tabular-nums text-slate-500">{i + 1}.</span>
                   <Input label="Stop name" value={s.name} onChange={(e) => setStop(i, { name: e.target.value })} className="min-w-[12rem] flex-1" aria-invalid={!!errors[`stop${i}`]} />
@@ -326,7 +326,7 @@ function RidersModal({ route, onClose, onChanged }: { route: TransportRoute; onC
 
   return (
     <>
-      <Modal open={!assign && !removing && !picking} onClose={onClose} title={`${route.name} · students`} size="lg">
+      <Modal open={!assign && !removing && !picking} onClose={onClose} title={`Students on ${route.name}`} size="lg">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {riders.length} rider{riders.length === 1 ? '' : 's'}

@@ -12,7 +12,7 @@ function Attendance() {
     [],
   );
   return (
-    <main className="px-4 py-5 sm:px-6 sm:py-8">
+    <main className="px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
       <AttendanceGrid api={api} />
     </main>
   );

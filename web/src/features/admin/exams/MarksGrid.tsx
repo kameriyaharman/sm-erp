@@ -134,7 +134,7 @@ export default function MarksGrid({ paper, sections, onSaved, onDirtyChange }: {
     <Card
       title={
         <span>
-          Marks · {paper.subject.name} <span className="font-normal text-slate-500 dark:text-slate-400">({paper.class.name}, out of {max})</span>
+          Marks for {paper.subject.name} <span className="font-normal text-slate-500 dark:text-slate-400">({paper.class.name}, out of {max})</span>
         </span>
       }
       padded={false}
@@ -147,7 +147,7 @@ export default function MarksGrid({ paper, sections, onSaved, onDirtyChange }: {
         )
       }
     >
-      <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 p-4 dark:border-slate-800">
+      <div className="flex flex-wrap items-end gap-3 border-b border-line p-4">
         <Select label="Section" value={sectionId} onChange={(e) => changeSection(e.target.value)} disabled={!!paper.section || paperSections.length < 2} className="min-w-[10rem]">
           {!sectionId && <option value="">Choose…</option>}
           {paperSections.map((s) => (
@@ -158,10 +158,10 @@ export default function MarksGrid({ paper, sections, onSaved, onDirtyChange }: {
         </Select>
         {sheet && (
           <p className="pb-2 text-sm text-slate-500 dark:text-slate-400">
-            {entered} of {rows.length} entered{paper.passMarks !== null ? ` · pass mark ${paper.passMarks}` : ''}
+            {entered} of {rows.length} entered{paper.passMarks !== null ? `, pass mark ${paper.passMarks}` : ''}
           </p>
         )}
-        <p className="ml-auto hidden pb-2 text-xs text-slate-400 md:block">Enter or ↓ next · ↑ previous · A marks absent</p>
+        <p className="ml-auto hidden pb-2 text-xs text-slate-400 md:block">Enter or ↓ for next, ↑ for previous, A marks absent</p>
       </div>
       {result && (
         <div className="px-4 pt-4">
@@ -189,11 +189,11 @@ export default function MarksGrid({ paper, sections, onSaved, onDirtyChange }: {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <th scope="col" className="w-14 border-b border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">Roll</th>
-                <th scope="col" className="border-b border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">Student</th>
-                <th scope="col" className="w-36 border-b border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">Marks / {max}</th>
-                <th scope="col" className="w-24 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-center dark:border-slate-800 dark:bg-slate-900/60">Absent</th>
+              <tr className="text-left text-13 font-medium text-slate-500 dark:text-slate-400">
+                <th scope="col" className="w-14 border-b border-line bg-slate-50 px-3 py-2.5 dark:bg-slate-900/60">Roll</th>
+                <th scope="col" className="border-b border-line bg-slate-50 px-3 py-2.5 dark:bg-slate-900/60">Student</th>
+                <th scope="col" className="w-36 border-b border-line bg-slate-50 px-3 py-2.5 dark:bg-slate-900/60">Marks / {max}</th>
+                <th scope="col" className="w-24 border-b border-line bg-slate-50 px-3 py-2.5 text-center dark:bg-slate-900/60">Absent</th>
               </tr>
             </thead>
             <tbody>
@@ -203,12 +203,12 @@ export default function MarksGrid({ paper, sections, onSaved, onDirtyChange }: {
                 const below = !err && !r.absent && r.marks !== '' && paper.passMarks !== null && Number(r.marks) < paper.passMarks;
                 return (
                   <tr key={r.studentId} className={cx(changed && 'bg-amber-50/60 dark:bg-amber-500/5')}>
-                    <td className="border-b border-slate-100 px-3 py-1.5 tabular-nums text-slate-500 dark:border-slate-800">{r.rollNumber ?? '-'}</td>
-                    <td className="border-b border-slate-100 px-3 py-1.5 dark:border-slate-800">
+                    <td className="border-b border-line px-3 py-1.5 tabular-nums text-slate-500">{r.rollNumber ?? '-'}</td>
+                    <td className="border-b border-line px-3 py-1.5">
                       <span className="whitespace-nowrap font-medium">{r.name}</span>
                       <span className="block text-xs text-slate-500 dark:text-slate-400">{r.admissionNumber}</span>
                     </td>
-                    <td className="border-b border-slate-100 px-3 py-1.5 dark:border-slate-800">
+                    <td className="border-b border-line px-3 py-1.5">
                       <input
                         ref={(el) => {
                           inputs.current[i] = el;
@@ -231,7 +231,7 @@ export default function MarksGrid({ paper, sections, onSaved, onDirtyChange }: {
                       />
                       {err && <span className="ml-2 text-xs text-red-600 dark:text-red-400">{err}</span>}
                     </td>
-                    <td className="border-b border-slate-100 px-3 py-1.5 text-center dark:border-slate-800">
+                    <td className="border-b border-line px-3 py-1.5 text-center">
                       <input
                         type="checkbox"
                         aria-label={`${r.name} absent`}

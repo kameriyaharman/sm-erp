@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Phone, Search } from 'lucide-react';
-import { Badge, Button, cx, Modal, Notice, Select, Spinner, type BadgeTone } from '@/components/ui';
+import { Badge, Button, controlClass, cx, Modal, Notice, Select, Spinner, type BadgeTone } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { ApiError, currentUser, type Role } from '@/lib/session';
 import { titleCase } from '@/lib/format';
@@ -242,7 +242,7 @@ export function StudentPicker({ onPick, status = 'active', autoFocus = true }: {
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           placeholder="Name, admission no. or parent phone"
-          className="block h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-950"
+          className={cx(controlClass, 'h-10 pl-9')}
         />
       </label>
       <div className="mt-2 min-h-[8rem]">
@@ -255,14 +255,14 @@ export function StudentPicker({ onPick, status = 'active', autoFocus = true }: {
         ) : !res.data?.data.length ? (
           <p className="px-1 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No students match “{q}”.</p>
         ) : (
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+          <ul className="divide-y divide-line rounded-lg border border-line">
             {res.data.data.map((s) => (
               <li key={s.id}>
                 <button type="button" onClick={() => onPick(s)} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-slate-50 focus:bg-slate-50 focus:outline-none dark:hover:bg-slate-800 dark:focus:bg-slate-800">
                   <span className="min-w-0">
                     <span className="block truncate font-medium">{s.name}</span>
                     <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
-                      {[s.class?.name, s.section?.name].filter(Boolean).join(' ') || 'No class'} · {s.admissionNumber}
+                      {[s.class?.name, s.section?.name].filter(Boolean).join(' ') || 'No class'}, {s.admissionNumber}
                     </span>
                   </span>
                   <StudentStatusBadge status={s.status} />
@@ -283,7 +283,7 @@ export function DefinitionList({ items }: { items: Array<[string, ReactNode]> })
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 lg:grid-cols-3">
       {items.map(([k, v]) => (
         <div key={k} className="min-w-0">
-          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{k}</dt>
+          <dt className="text-13 font-medium text-slate-500 dark:text-slate-400">{k}</dt>
           <dd className="mt-0.5 break-words text-sm">{v === null || v === undefined || v === '' ? <span className="text-slate-400">-</span> : v}</dd>
         </div>
       ))}
@@ -329,5 +329,5 @@ export function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg'
 
 /** Small toolbar row for filters above a table. */
 export function FilterBar({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 p-4 dark:border-slate-800 [&>*]:min-w-[10rem] [&>*]:flex-1 sm:[&>*]:flex-none">{children}</div>;
+  return <div className="flex flex-wrap items-end gap-3 border-b border-line p-4 [&>*]:min-w-[10rem] [&>*]:flex-1 sm:[&>*]:flex-none">{children}</div>;
 }

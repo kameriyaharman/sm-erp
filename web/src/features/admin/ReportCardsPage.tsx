@@ -293,7 +293,7 @@ function EditCardModal({ card, onClose, onSaved }: { card: SectionReportCard | n
     <Modal
       open={!!card}
       onClose={busy ? () => undefined : onClose}
-      title={`Remarks · ${card?.name ?? ''}`}
+      title={`Remarks for ${card?.name ?? ''}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={busy}>

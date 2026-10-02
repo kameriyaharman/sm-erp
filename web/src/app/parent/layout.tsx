@@ -16,8 +16,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover', // lets env(safe-area-inset-*) work under the notch / home indicator
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fafaf9' },
-    { media: '(prefers-color-scheme: dark)', color: '#0c0a09' },
+    { media: '(prefers-color-scheme: light)', color: '#0E1A33' },
+    { media: '(prefers-color-scheme: dark)', color: '#0A1121' },
   ],
 };
 

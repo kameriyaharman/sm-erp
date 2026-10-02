@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { IndianRupee, Percent, TriangleAlert, Users } from 'lucide-react';
 import RequireAuth from '@/components/RequireAuth';
-import DashboardOverview, { type Defaulter, type Kpi, type MonthlyFinance } from '@/features/dashboard/DashboardOverview';
+import DashboardOverview, { type Defaulter, type Kpi, type MonthlyFinance, type TodaySummary } from '@/features/dashboard/DashboardOverview';
+import { ErrorState, Skeleton } from '@/components/ui';
 import { QuickActions, TodayAttendance } from '@/features/dashboard/DashboardExtras';
 import type { AttendanceSection, ExpenseMonth } from '@/features/admin/types';
 import { apiGet } from '@/lib/session';
@@ -22,7 +23,7 @@ interface StudentList {
   meta: { total: number };
 }
 interface Me {
-  data: { schoolName?: string | null; branchName?: string | null; role: string };
+  data: { schoolName?: string | null; branchName?: string | null; role: string; firstName?: string };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -58,6 +59,7 @@ function toProps(me: Me['data'], a: Analytics, d: DefaultersResponse, s: Student
   const finance: MonthlyFinance[] = keys.map((k) => ({ month: MONTHS[Number(k.slice(5, 7)) - 1], collection: collectedBy.get(k) ?? 0, expense: spentBy.get(k) ?? 0 }));
   const asOf = new Date(`${d.meta.asOf}T00:00:00`);
   return {
+    firstName: me.firstName,
     campusName: [me.schoolName, me.role === 'super_admin' ? 'all campuses' : me.branchName].filter(Boolean).join(', '),
     academicYear: s.data[0]?.academicYear.name ?? '',
     periodLabel: asOf.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
@@ -69,10 +71,31 @@ function toProps(me: Me['data'], a: Analytics, d: DefaultersResponse, s: Student
   };
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The "Today" strip: registers taken, absentees, this month's collection, overdue fees. */
+function todayOf(a: Analytics, sections: AttendanceSection[] | null): TodaySummary {
+  const now = new Date();
+  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const list = sections ?? [];
+  const taken = list.filter((s) => s.submission);
+  return {
+    dateLabel: now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }),
+    sectionsMarked: taken.length,
+    sectionsTotal: list.length,
+    absent: taken.length ? taken.reduce((n, s) => n + ((s.submission?.total ?? 0) - (s.submission?.present ?? 0)), 0) : null,
+    collectedLabel: `Collected in ${MONTH_NAMES[now.getMonth()]}`,
+    collected: Number(a.byMonth.find((m) => m.month.slice(0, 7) === key)?.collected ?? 0),
+    overdueAmount: Number(a.summary.overdue),
+    overdueStudents: a.summary.studentsOverdue,
+  };
+}
+
 function Dashboard() {
   const router = useRouter();
   const [props, setProps] = useState<ReturnType<typeof toProps> | null>(null);
   const [sections, setSections] = useState<AttendanceSection[] | null>(null);
+  const [today, setToday] = useState<TodaySummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -89,6 +112,7 @@ function Dashboard() {
       ]);
       setProps(toProps(me.data, analytics.data, defaulters, students, expenses.data));
       setSections(today?.data ?? null);
+      setToday(todayOf(analytics.data, today?.data ?? null));
     } catch (err) {
       setError((err as Error).message);
     }
@@ -100,19 +124,31 @@ function Dashboard() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-lg px-6 py-20 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        <button type="button" onClick={load} className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium dark:border-slate-700">Try again</button>
+      <div className="mx-auto max-w-lg px-6 py-16">
+        <ErrorState message={error} onRetry={load} />
       </div>
     );
   }
   if (!props) {
-    return <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-8"><div className="h-40 animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-800" /></div>;
+    return (
+      <div className="mx-auto max-w-content space-y-6 px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8" role="status" aria-label="Loading">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-24 rounded-xl" />
+        <Skeleton className="h-32 rounded-xl" />
+        <Skeleton className="h-72 rounded-xl" />
+      </div>
+    );
   }
   return (
-    <DashboardOverview {...props} onViewAllDefaulters={() => router.push('/fees/defaulters')} studentHref={(id) => `/students/${id}`} onExport={() => window.print()}>
+    <DashboardOverview
+      {...props}
+      today={today ?? undefined}
+      aside={sections && <TodayAttendance sections={sections} />}
+      onViewAllDefaulters={() => router.push('/fees/defaulters')}
+      studentHref={(id) => `/students/${id}`}
+      onExport={() => window.print()}
+    >
       <QuickActions />
-      {sections && <TodayAttendance sections={sections} />}
     </DashboardOverview>
   );
 }

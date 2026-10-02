@@ -38,7 +38,7 @@ export default function RequireAuth({ roles, children, shell = true }: { roles: 
   if (!user) {
     return (
       <div className="flex min-h-dvh items-center justify-center" role="status" aria-live="polite">
-        <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900 dark:border-slate-700 dark:border-t-white" />
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-100 border-t-indigo-600 dark:border-white/10 dark:border-t-indigo-300" />
         <span className="sr-only">Loading…</span>
       </div>
     );

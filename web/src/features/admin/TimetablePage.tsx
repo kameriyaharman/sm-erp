@@ -260,21 +260,30 @@ export default function TimetablePage() {
             <table className="w-full min-w-[56rem] table-fixed border-collapse text-sm">
               <thead>
                 <tr>
-                  <th scope="col" className="sticky left-0 z-10 w-28 border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                  <th scope="col" className="sticky left-0 z-10 w-28 border-b border-r border-line bg-surface-muted px-3 py-2.5 text-left text-13 font-medium text-slate-500 dark:text-slate-400">
                     Period
                   </th>
-                  {DAYS.map((d) => (
-                    <th key={d} scope="col" className="border-b border-slate-200 bg-slate-50 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400">
-                      <span className="hidden sm:inline">{DAY_LONG[d]}</span>
-                      <span className="sm:hidden">{DAY_NAME[d]}</span>
-                    </th>
-                  ))}
+                  {DAYS.map((d) => {
+                    const isToday = String(new Date().getDay()) === d;
+                    return (
+                      <th
+                        key={d}
+                        scope="col"
+                        aria-current={isToday ? 'date' : undefined}
+                        className={`border-b bg-surface-muted px-2 py-2.5 text-left text-13 font-medium ${isToday ? 'border-b-2 border-b-marigold-400 text-slate-900 dark:text-white' : 'border-line text-slate-500 dark:text-slate-400'}`}
+                      >
+                        <span className="hidden sm:inline">{DAY_LONG[d]}</span>
+                        <span className="sm:hidden">{DAY_NAME[d]}</span>
+                        {isToday && <span className="ml-1.5 text-xs font-medium text-marigold-700 dark:text-marigold-300">Today</span>}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
                 {periodNos.map((n) => (
                   <tr key={n}>
-                    <th scope="row" className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-3 py-2 text-left align-top dark:border-slate-800 dark:bg-slate-900">
+                    <th scope="row" className="sticky left-0 z-10 border-b border-r border-line bg-surface px-3 py-2 text-left align-top">
                       <span className="block text-sm font-semibold">P{n}</span>
                       <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400">{rowTime(n)}</span>
                       {editing && (
@@ -293,16 +302,16 @@ export default function TimetablePage() {
                           {p.teacherName && <p className="truncate text-xs text-slate-600 dark:text-slate-300">{p.teacherName}</p>}
                           <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
                             {p.start}–{p.end}
-                            {p.room ? ` · ${p.room}` : ''}
+                            {p.room ? `, ${p.room}` : ''}
                           </p>
                         </div>
                       ) : (
-                        <div className={cx('flex h-full min-h-[3.5rem] items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400 dark:border-slate-700', bad && 'ring-2 ring-red-500')}>
+                        <div className={cx('flex h-full min-h-[3.5rem] items-center justify-center rounded-lg border border-dashed border-line text-xs text-slate-400 dark:border-slate-700', bad && 'ring-2 ring-red-500')}>
                           {editing ? '+ Add' : 'Free'}
                         </div>
                       );
                       return (
-                        <td key={d} className="h-[4.5rem] border-b border-slate-100 p-1 align-top dark:border-slate-800">
+                        <td key={d} className="h-[4.5rem] border-b border-line p-1 align-top">
                           {editing ? (
                             <button type="button" className="block h-full w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" onClick={() => setCell({ day: d, periodNo: n })} aria-label={`Edit ${DAY_LONG[d]} period ${n}`}>
                               {content}
@@ -401,7 +410,7 @@ function PeriodModal({
     <Modal
       open
       onClose={onClose}
-      title={`${DAY_LONG[day]} · period ${periodNo}`}
+      title={`${DAY_LONG[day]}, period ${periodNo}`}
       footer={
         <>
           {period && (
@@ -452,7 +461,7 @@ function PeriodModal({
           {teachers.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
-              {t.designation ? ` · ${t.designation}` : ''}
+              {t.designation ? `, ${t.designation}` : ''}
             </option>
           ))}
         </Select>

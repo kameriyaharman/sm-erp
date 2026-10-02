@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useId, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
+import { useEffect, useId, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -75,8 +75,14 @@ export interface DashboardOverviewProps {
   onViewAllDefaulters?: () => void;
   /** Link for a defaulter's name (e.g. the student profile). */
   studentHref?: (studentId: string) => string;
-  /** Extra content between the header and the KPI strip (quick actions, today's attendance). */
+  /** Extra content between the Today strip and the KPI strip (quick actions). */
   children?: ReactNode;
+  /** Greeting name ("Good morning, Anita"). */
+  firstName?: string;
+  /** The day at a glance; the strip is hidden when absent. */
+  today?: TodaySummary;
+  /** Extra cards above the defaulters list (e.g. today's registers). */
+  aside?: ReactNode;
 }
 
 /* ============================================================================
@@ -181,6 +187,23 @@ const SAMPLE_FINANCE: MonthlyFinance[] = [
  * Page
  * ========================================================================== */
 
+/** The day at a glance, shown under the greeting. */
+export interface TodaySummary {
+  dateLabel: string;           // "Friday, 2 October"
+  sectionsMarked: number;
+  sectionsTotal: number;
+  absent: number | null;       // null until a register is taken
+  collectedLabel: string;      // "Collected in October"
+  collected: number;           // rupees
+  overdueAmount: number;       // rupees
+  overdueStudents: number;
+}
+
+function greetingFor(date = new Date()): string {
+  const h = date.getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
+
 export default function DashboardOverview({
   campusName = 'Dwarka campus',
   academicYear = '2026–27',
@@ -195,43 +218,53 @@ export default function DashboardOverview({
   onViewAllDefaulters,
   studentHref,
   children,
+  firstName,
+  today,
+  aside,
 }: DashboardOverviewProps) {
+  // Greeting depends on the viewer's clock: render it after mount to avoid a hydration mismatch.
+  const [greeting, setGreeting] = useState('Welcome back');
+  useEffect(() => setGreeting(greetingFor()), []);
   return (
-    <main className="min-h-full bg-slate-50 px-4 py-6 sm:px-8 sm:py-8 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
-      <div className="mx-auto flex max-w-[1440px] flex-col gap-6">
-        {/* Header */}
+    <main className="mx-auto w-full max-w-content px-4 pb-12 pt-6 sm:px-6 lg:px-8 lg:pt-8">
+      <div className="flex flex-col gap-6">
+        {/* Greeting */}
         <header className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {campusName}, academic year {academicYear}. Figures as of {asOfLabel}.
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white sm:text-[28px] sm:leading-9">
+              {greeting}
+              {firstName ? `, ${firstName}` : ''}
+            </h1>
+            <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
+              {campusName}. Academic year {academicYear}.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-slate-300 dark:focus-visible:ring-offset-slate-950"
-              aria-label={`Reporting period: ${periodLabel}`}
-            >
-              <CalendarDays className="h-4 w-4 text-slate-400" aria-hidden />
-              {periodLabel}
-            </button>
-            <button
-              type="button"
-              onClick={onExport}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-900 px-3.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-slate-300 dark:focus-visible:ring-offset-slate-950"
-            >
-              <Download className="h-4 w-4" aria-hidden />
-              Export report
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onExport}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-white/5"
+          >
+            <Download className="h-4 w-4 text-slate-500" aria-hidden />
+            Export report
+          </button>
         </header>
+
+        {today && <TodayStrip today={today} />}
 
         {children}
 
         {/* KPI strip: one surface, four measures */}
-        <section aria-label="Key figures" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <dl className="grid grid-cols-2 divide-slate-200 xl:grid-cols-4 xl:divide-x dark:divide-slate-800 [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(-n+2)]:border-slate-200 xl:[&>*:nth-child(-n+2)]:border-b-0 dark:[&>*:nth-child(-n+2)]:border-slate-800">
+        <section aria-labelledby="overview-title">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="overview-title" className="text-base font-semibold text-slate-900 dark:text-white">
+              Overview
+            </h2>
+            <p className="flex items-center gap-1.5 text-13 text-slate-500 dark:text-slate-400" aria-label={`Reporting period: ${periodLabel}`}>
+              <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+              {periodLabel}, figures as of {asOfLabel}
+            </p>
+          </div>
+          <dl className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-surface xl:grid-cols-4 [&>*]:border-line max-xl:[&>*:nth-child(-n+2)]:border-b max-xl:[&>*:nth-child(odd)]:border-r xl:[&>*:not(:last-child)]:border-r">
             {kpis.map((kpi) => (
               <KpiTile key={kpi.id} kpi={kpi} />
             ))}
@@ -241,17 +274,77 @@ export default function DashboardOverview({
         {/* Detail */}
         <div className="grid grid-cols-12 gap-6">
           <CollectionExpenseCard finance={finance} academicYear={academicYear} className="col-span-12 xl:col-span-7 xl:self-start" />
-          <DefaultersCard
-            defaulters={defaulters}
-            total={defaultersTotal}
-            onRemind={onRemind}
-            studentHref={studentHref}
-            onViewAll={onViewAllDefaulters}
-            className="col-span-12 xl:col-span-5"
-          />
+          <div className="col-span-12 flex flex-col gap-6 xl:col-span-5">
+            {aside}
+            <DefaultersCard defaulters={defaulters} total={defaultersTotal} onRemind={onRemind} studentHref={studentHref} onViewAll={onViewAllDefaulters} />
+          </div>
         </div>
       </div>
     </main>
+  );
+}
+
+/* ============================================================================
+ * Today strip — the dashboard's echo of the sidebar's marigold "you are here"
+ * ========================================================================== */
+
+function TodayStrip({ today }: { today: TodaySummary }) {
+  const allMarked = today.sectionsTotal > 0 && today.sectionsMarked === today.sectionsTotal;
+  const items: Array<{ label: string; value: ReactNode; hint?: ReactNode; href?: string }> = [
+    {
+      label: 'Attendance marked',
+      value: (
+        <>
+          {today.sectionsMarked}
+          <span className="text-slate-400 dark:text-slate-500"> / {today.sectionsTotal}</span>
+        </>
+      ),
+      hint: allMarked ? 'All registers taken' : today.sectionsTotal ? `${today.sectionsTotal - today.sectionsMarked} section${today.sectionsTotal - today.sectionsMarked === 1 ? '' : 's'} to go` : 'No sections yet',
+      href: '/teacher/attendance',
+    },
+    {
+      label: 'Absent today',
+      value: today.absent === null ? <span className="text-slate-400 dark:text-slate-500">None yet</span> : countFmt.format(today.absent),
+      hint: today.absent === null ? 'Shown once a register is taken' : 'Parents are alerted by SMS',
+      href: '/attendance/history',
+    },
+    {
+      label: today.collectedLabel,
+      value: formatInrCompact(today.collected),
+      hint: 'Fees received',
+      href: '/fees',
+    },
+    {
+      label: 'Overdue fees',
+      value: formatInrCompact(today.overdueAmount),
+      hint: `${countFmt.format(today.overdueStudents)} student${today.overdueStudents === 1 ? '' : 's'} past due date`,
+      href: '/fees/defaulters',
+    },
+  ];
+  return (
+    <section aria-label="Today" className="relative overflow-hidden rounded-xl border border-line bg-surface">
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-marigold-400" />
+      <div className="flex flex-col lg:flex-row">
+        <div className="flex items-center gap-3 border-b border-line px-5 py-4 lg:w-[220px] lg:shrink-0 lg:flex-col lg:items-start lg:justify-center lg:gap-1 lg:border-b-0 lg:border-r">
+          <span className="inline-flex items-center gap-1.5 text-13 font-medium text-marigold-700 dark:text-marigold-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-marigold-500" aria-hidden />
+            Today
+          </span>
+          <p className="text-[15px] font-semibold text-slate-900 dark:text-white lg:text-base">{today.dateLabel}</p>
+        </div>
+        <ul className="grid flex-1 grid-cols-2 lg:grid-cols-4">
+          {items.map((it, i) => (
+            <li key={it.label} className={['border-line', i % 2 === 0 ? 'border-r' : '', i < 2 ? 'border-b lg:border-b-0' : '', i === 1 ? 'lg:border-r' : '', i === 3 ? 'lg:border-r-0' : ''].join(' ')}>
+              <Link href={it.href ?? '#'} className="group block h-full px-4 py-3.5 transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.02] sm:px-5 sm:py-4">
+                <p className="text-13 font-medium text-slate-500 dark:text-slate-400">{it.label}</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900 dark:text-white">{it.value}</p>
+                {it.hint && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{it.hint}</p>}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
@@ -266,42 +359,44 @@ function KpiTile({ kpi }: { kpi: Kpi }) {
   const DeltaIcon = isUp ? ArrowUpRight : ArrowDownRight;
   const unit = kpi.deltaUnit ?? '%';
   const deltaText = `${isUp ? '+' : '−'}${Math.abs(kpi.delta).toFixed(1)}${unit === 'pts' ? ' pts' : '%'}`;
+  const hasDelta = Math.abs(kpi.delta) >= 0.05;
+  const hasTrend = new Set(kpi.trend).size > 1;
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <dt className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400">
-        <KpiIcon className="h-4 w-4 text-slate-400 dark:text-slate-500" aria-hidden />
-        {kpi.label}
+    <div className="flex min-w-0 flex-col gap-3 p-4 sm:p-5">
+      <dt className="flex items-center gap-2 text-13 font-medium text-slate-500 dark:text-slate-400">
+        <KpiIcon className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
+        <span className="truncate">{kpi.label}</span>
       </dt>
-      <dd className="flex items-end justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <span className="text-[1.875rem] font-semibold leading-none tracking-tight tabular-nums">
+      <dd className="flex items-end justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-2xl font-semibold leading-none tracking-tight tabular-nums text-slate-900 dark:text-white sm:text-[28px]">
             {formatKpiValue(kpi.value, kpi.format)}
           </span>
-          <span className="flex items-center gap-1.5 text-xs">
-            <span
-              className={[
-                'inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-semibold tabular-nums',
-                isGood
-                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
-                  : 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400',
-              ].join(' ')}
-            >
-              <DeltaIcon className="h-3.5 w-3.5" aria-hidden />
-              <span className="sr-only">{isUp ? 'Up' : 'Down'} </span>
-              {deltaText}
-            </span>
+          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+            {hasDelta && (
+              <span
+                className={[
+                  'inline-flex items-center gap-0.5 font-medium tabular-nums',
+                  isGood ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
+                ].join(' ')}
+              >
+                <DeltaIcon className="h-3.5 w-3.5" aria-hidden />
+                <span className="sr-only">{isUp ? 'Up' : 'Down'} </span>
+                {deltaText}
+              </span>
+            )}
             <span className="text-slate-500 dark:text-slate-400">{kpi.comparison}</span>
           </span>
         </div>
-        <Sparkline points={kpi.trend} />
+        {hasTrend && <Sparkline points={kpi.trend} />}
       </dd>
     </div>
   );
 }
 
 function Sparkline({ points }: { points: number[] }) {
-  const width = 96;
+  const width = 88;
   const height = 32;
   const pad = 3;
   const min = Math.min(...points);
@@ -317,9 +412,9 @@ function Sparkline({ points }: { points: number[] }) {
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="hidden shrink-0 overflow-visible sm:block" aria-hidden>
-      <path d={area} className="fill-slate-100 dark:fill-slate-800/70" />
-      <path d={line} fill="none" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" className="stroke-slate-400 dark:stroke-slate-500" />
-      <circle cx={lx} cy={ly} r={3} strokeWidth={2} className="fill-[#2a78d6] stroke-white dark:fill-[#3987e5] dark:stroke-slate-900" />
+      <path d={area} className="fill-indigo-50 dark:fill-indigo-400/10" />
+      <path d={line} fill="none" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" className="stroke-indigo-300 dark:stroke-indigo-400/60" />
+      <circle cx={lx} cy={ly} r={3} strokeWidth={2} className="fill-indigo-600 stroke-white dark:fill-indigo-300 dark:stroke-slate-900" />
     </svg>
   );
 }
@@ -330,8 +425,8 @@ function Sparkline({ points }: { points: number[] }) {
  * ========================================================================== */
 
 const SERIES = [
-  { key: 'collection', label: 'Collection', swatch: 'bg-[#2a78d6] dark:bg-[#3987e5]', fill: 'fill-[#2a78d6] dark:fill-[#3987e5]' },
-  { key: 'expense', label: 'Expense', swatch: 'bg-[#eb6834] dark:bg-[#d95926]', fill: 'fill-[#eb6834] dark:fill-[#d95926]' },
+  { key: 'collection', label: 'Collection', swatch: 'bg-indigo-500 dark:bg-indigo-400', fill: 'fill-indigo-500 dark:fill-indigo-400' },
+  { key: 'expense', label: 'Expense', swatch: 'bg-[#B4BFD3] dark:bg-[#4A5A7C]', fill: 'fill-[#B4BFD3] dark:fill-[#4A5A7C]' },
 ] as const;
 
 /** Rounds the axis maximum up to 4 even gridlines on a 1 / 2 / 2.5 / 5 x 10^n step. */
@@ -367,15 +462,24 @@ function CollectionExpenseCard({
   }, [finance]);
 
   // Geometry (SVG user units; the SVG scales to the card width)
-  const W = 720;
-  const H = 300;
-  const M = { top: 12, right: 8, bottom: 28, left: 52 };
+  // Phones get a narrower drawing so the axis labels stay readable when the SVG scales down.
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  const W = narrow ? 360 : 720;
+  const H = narrow ? 230 : 300;
+  const M = { top: 12, right: 4, bottom: 26, left: narrow ? 40 : 52 };
   const plotW = W - M.left - M.right;
   const plotH = H - M.top - M.bottom;
   const yMax = niceMax(Math.max(...finance.flatMap((m) => [m.collection, m.expense])));
   const ticks = Array.from({ length: 5 }, (_, i) => (yMax / 4) * i);
   const band = plotW / finance.length;
-  const barW = Math.min(28, band * 0.26);
+  const barW = Math.min(28, band * (narrow ? 0.32 : 0.26));
   const gap = 2;
   const y = (v: number) => M.top + plotH - (v / yMax) * plotH;
 
@@ -384,11 +488,11 @@ function CollectionExpenseCard({
   return (
     <section
       aria-labelledby={titleId}
-      className={`flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}
+      className={`flex flex-col rounded-xl border border-line bg-surface ${className}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-4">
         <div>
-          <h2 id={titleId} className="text-base font-semibold">
+          <h2 id={titleId} className="text-[15px] font-semibold text-slate-900 dark:text-white">
             Collection vs expense
           </h2>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Monthly, academic year {academicYear} to date</p>
@@ -403,7 +507,7 @@ function CollectionExpenseCard({
         </ul>
       </div>
 
-      <dl className="grid grid-cols-3 gap-6 px-6 pt-5">
+      <dl className="grid grid-cols-3 gap-4 px-5 pt-4">
         <Figure label="Collected" value={formatInrCompact(totals.collection)} />
         <Figure label="Spent" value={formatInrCompact(totals.expense)} />
         <Figure
@@ -460,7 +564,7 @@ function CollectionExpenseCard({
                   y={M.top}
                   width={band}
                   height={plotH}
-                  className={isActive ? 'fill-slate-100/70 dark:fill-slate-800/50' : 'fill-transparent'}
+                  className={isActive ? 'fill-slate-100/80 dark:fill-white/[0.03]' : 'fill-transparent'}
                 />
                 {SERIES.map((s, si) => {
                   const v = m[s.key];
@@ -485,7 +589,7 @@ function CollectionExpenseCard({
         {activeMonth && active !== null && (
           <div
             role="status"
-            className="pointer-events-none absolute top-3 z-10 w-48 -translate-x-1/2 rounded-lg border border-slate-200 bg-white/95 p-3 text-xs shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"
+            className="pointer-events-none absolute top-3 z-10 w-48 -translate-x-1/2 rounded-lg border border-line bg-surface p-3 text-xs shadow-float"
             // Centre over the hovered month: 1rem gutter + fraction of the SVG's rendered width.
             style={{
               left: `clamp(6rem, calc(1rem + (100% - 2rem) * ${((M.left + band * active + band / 2) / W).toFixed(4)}), calc(100% - 6rem))`,
@@ -501,7 +605,7 @@ function CollectionExpenseCard({
                 <span className="font-medium tabular-nums text-slate-900 dark:text-slate-100">{formatInrCompact(activeMonth[s.key])}</span>
               </p>
             ))}
-            <p className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-slate-600 dark:border-slate-800 dark:text-slate-300">
+            <p className="mt-2 flex items-center justify-between border-t border-line pt-2 text-slate-600 dark:text-slate-300">
               Net
               <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
                 {activeMonth.collection - activeMonth.expense < 0 ? '−' : '+'}
@@ -534,7 +638,7 @@ function CollectionExpenseCard({
       </div>
 
       {totals.worst && (
-        <div className="mt-auto flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-100 px-6 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        <div className="mt-auto flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line px-5 py-3 text-xs text-slate-500 dark:text-slate-400">
           <span>
             Collection covered expenses in{' '}
             <span className="font-medium tabular-nums text-slate-700 dark:text-slate-200">
@@ -587,20 +691,20 @@ const SEVERITY: Record<DefaulterSeverity, { label: string; icon: Icon; iconClass
   critical: {
     label: '90+ days',
     icon: TriangleAlert,
-    iconClass: 'text-[#d03b3b]',
-    chip: 'bg-[#d03b3b]/10 text-red-800 ring-[#d03b3b]/25 dark:bg-[#d03b3b]/15 dark:text-red-300',
+    iconClass: 'text-red-600 dark:text-red-400',
+    chip: 'bg-red-50 text-red-700 dark:bg-red-400/10 dark:text-red-300',
   },
   overdue: {
     label: '30+ days',
     icon: CircleAlert,
-    iconClass: 'text-[#ec835a]',
-    chip: 'bg-[#ec835a]/10 text-orange-800 ring-[#ec835a]/30 dark:bg-[#ec835a]/15 dark:text-orange-300',
+    iconClass: 'text-amber-600 dark:text-amber-400',
+    chip: 'bg-amber-50 text-amber-800 dark:bg-amber-400/10 dark:text-amber-300',
   },
   due: {
     label: 'Recently due',
     icon: Clock,
-    iconClass: 'text-[#d99a0b] dark:text-[#fab219]',
-    chip: 'bg-[#fab219]/10 text-amber-800 ring-[#fab219]/35 dark:bg-[#fab219]/10 dark:text-amber-300',
+    iconClass: 'text-slate-500 dark:text-slate-400',
+    chip: 'bg-slate-100 text-slate-700 dark:bg-white/[0.07] dark:text-slate-300',
   },
 };
 
@@ -624,11 +728,11 @@ function DefaultersCard({
   return (
     <section
       aria-labelledby={titleId}
-      className={`flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}
+      className={`flex flex-col rounded-xl border border-line bg-surface ${className}`}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+      <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
         <div>
-          <h2 id={titleId} className="text-base font-semibold">
+          <h2 id={titleId} className="text-[15px] font-semibold text-slate-900 dark:text-white">
             Fee defaulters
           </h2>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
@@ -639,7 +743,7 @@ function DefaultersCard({
         <button
           type="button"
           onClick={onViewAll}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white dark:focus-visible:ring-slate-300"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 text-13 font-medium text-indigo-700 transition-colors hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-400/10"
         >
           View all
           <ChevronRight className="h-4 w-4" aria-hidden />
@@ -647,23 +751,23 @@ function DefaultersCard({
       </div>
 
       {defaulters.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-12 text-center">
           <p className="text-sm font-medium">No overdue fees</p>
           <p className="text-sm text-slate-500 dark:text-slate-400">Every student is up to date for this period.</p>
         </div>
       ) : (
-        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        <ul className="divide-y divide-line">
           {defaulters.map((d) => {
             const sev = SEVERITY[severityOf(d)];
             const SevIcon = sev.icon;
             const classLabel = [d.className, d.sectionName].filter(Boolean).join(' ');
             return (
-              <li key={d.studentId} className="group flex items-center gap-4 px-6 py-3.5 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+              <li key={d.studentId} className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.02]">
                 <Initials name={d.studentName} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                     {studentHref ? (
-                      <Link href={studentHref(d.studentId)} className="hover:underline">
+                      <Link href={studentHref(d.studentId)} className="hover:text-indigo-700 hover:underline dark:hover:text-indigo-300">
                         {d.studentName}
                       </Link>
                     ) : (
@@ -671,21 +775,19 @@ function DefaultersCard({
                     )}
                   </p>
                   <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {classLabel}
-                    <span className="mx-1.5 text-slate-300 dark:text-slate-600" aria-hidden>/</span>
-                    <span className="tabular-nums">{d.admissionNumber}</span>
+                    {classLabel}, <span className="tabular-nums">{d.admissionNumber}</span>
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1.5">
                   <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{inrFull.format(d.totalDue)}</span>
                   <span className="flex items-center gap-1.5">
                     {d.partiallyPaid && (
-                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-white/[0.07] dark:text-slate-300">
                         Part paid
                       </span>
                     )}
                     <span
-                      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${sev.chip}`}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${sev.chip}`}
                       title={`${d.daysOverdue} days overdue, ${d.openInvoices} open invoice${d.openInvoices === 1 ? '' : 's'}`}
                     >
                       <SevIcon className={`h-3 w-3 ${sev.iconClass}`} aria-hidden />
@@ -709,7 +811,7 @@ function DefaultersCard({
         </ul>
       )}
 
-      <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 px-6 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+      <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-5 py-3 text-xs text-slate-500 dark:text-slate-400">
         {(Object.keys(SEVERITY) as DefaulterSeverity[]).map((key) => {
           const { icon: LegendIcon, iconClass, label } = SEVERITY[key];
           return (
@@ -733,7 +835,7 @@ function Initials({ name }: { name: string }) {
   return (
     <span
       aria-hidden
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600 dark:bg-white/[0.06] dark:text-slate-300"
     >
       {initials}
     </span>

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CalendarCheck, FileBadge, IndianRupee, Megaphone, UserPlus, Wallet, type LucideIcon } from 'lucide-react';
+import { CalendarCheck, CircleCheck, Clock, FileBadge, IndianRupee, Megaphone, UserPlus, Wallet, type LucideIcon } from 'lucide-react';
 import type { AttendanceSection } from '@/features/admin/types';
 
 const ACTIONS: Array<{ href: string; label: string; icon: LucideIcon }> = [
@@ -15,19 +15,20 @@ const ACTIONS: Array<{ href: string; label: string; icon: LucideIcon }> = [
 
 export function QuickActions() {
   return (
-    <nav aria-label="Quick actions" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-      {ACTIONS.map(({ href, label, icon: Icon }) => (
-        <Link
-          key={href}
-          href={href}
-          className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium shadow-sm transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10"
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700 group-hover:bg-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300">
-            <Icon className="h-4 w-4" aria-hidden />
-          </span>
-          <span className="leading-tight">{label}</span>
-        </Link>
-      ))}
+    <nav aria-label="Quick actions" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+      <ul className="flex min-w-max flex-wrap gap-2 sm:min-w-0">
+        {ACTIONS.map(({ href, label, icon: Icon }) => (
+          <li key={href}>
+            <Link
+              href={href}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-13 font-medium text-slate-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50/60 hover:text-indigo-800 dark:text-slate-200 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-400/10 dark:hover:text-indigo-100"
+            >
+              <Icon className="h-4 w-4 text-indigo-600 dark:text-indigo-300" aria-hidden />
+              {label}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </nav>
   );
 }
@@ -39,41 +40,40 @@ export function TodayAttendance({ sections }: { sections: AttendanceSection[] })
   const marked = taken.reduce((n, s) => n + (s.submission?.total ?? 0), 0);
   const pct = marked ? (present / marked) * 100 : null;
   return (
-    <section aria-labelledby="today-att" className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4 dark:border-slate-800">
+    <section aria-labelledby="today-att" className="rounded-xl border border-line bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div>
-          <h2 id="today-att" className="text-base font-semibold">
+          <h2 id="today-att" className="text-[15px] font-semibold text-slate-900 dark:text-white">
             Today&apos;s attendance
           </h2>
-          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-13 text-slate-500 dark:text-slate-400">
             {taken.length} of {sections.length} registers taken
             {pct !== null && (
               <>
-                {' '}
-                · <span className="font-medium tabular-nums text-slate-700 dark:text-slate-200">{pct.toFixed(1)}%</span> present ({present}/{marked})
+                , <span className="font-medium tabular-nums text-slate-700 dark:text-slate-200">{pct.toFixed(1)}%</span> present ({present}/{marked})
               </>
             )}
           </p>
         </div>
-        <Link href="/attendance/history" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+        <Link href="/attendance/history" className="rounded-md px-2 py-1 text-13 font-medium text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-400/10">
           History
         </Link>
       </div>
       {sections.length === 0 ? (
-        <p className="px-6 py-6 text-sm text-slate-500">No sections set up for this year.</p>
+        <p className="px-5 py-6 text-sm text-slate-500">No sections set up for this year.</p>
       ) : (
-        <ul className="flex flex-wrap gap-2 px-6 py-4">
+        <ul className="divide-y divide-line">
           {sections.map((s) => (
-            <li
-              key={s.id}
-              className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ring-1 ring-inset ${
-                s.submission
-                  ? 'bg-emerald-50 text-emerald-900 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/25'
-                  : 'bg-amber-50 text-amber-900 ring-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/25'
-              }`}
-            >
-              <span className="font-medium">{s.label}</span>
-              <span className="tabular-nums text-xs">{s.submission ? `${s.submission.present}/${s.submission.total} present` : 'Not taken'}</span>
+            <li key={s.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+              {s.submission ? (
+                <CircleCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              ) : (
+                <Clock className="h-4 w-4 shrink-0 text-marigold-500" aria-hidden />
+              )}
+              <span className="flex-1 font-medium text-slate-800 dark:text-slate-100">{s.label}</span>
+              <span className={`tabular-nums text-13 ${s.submission ? 'text-slate-600 dark:text-slate-300' : 'text-marigold-700 dark:text-marigold-300'}`}>
+                {s.submission ? `${s.submission.present}/${s.submission.total} present` : 'Not taken'}
+              </span>
             </li>
           ))}
         </ul>

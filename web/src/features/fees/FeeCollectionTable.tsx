@@ -17,6 +17,7 @@ import {
 import type { FeesApi, ListStudentsParams, Receipt, StudentFeeList, StudentFeeRow, StudentFeeStatus } from './api';
 import { formatInr, toPaise } from './format';
 import CollectFeeModal from './CollectFeeModal';
+import { buttonClass, controlClass, cx } from '@/components/ui';
 
 /* ============================================================================
  * Fee collection table
@@ -38,32 +39,32 @@ const STATUS_TAG: Record<StudentFeeStatus, { label: string; icon: typeof CircleC
   paid: {
     label: 'Paid',
     icon: CircleCheck,
-    iconClass: 'text-[#0ca30c]',
-    chip: 'bg-emerald-50 text-emerald-800 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/25',
+    iconClass: 'text-emerald-600 dark:text-emerald-400',
+    chip: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300',
   },
   partially_paid: {
     label: 'Part paid',
     icon: CircleDashed,
     iconClass: 'text-slate-500 dark:text-slate-400',
-    chip: 'bg-slate-100 text-slate-700 ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
+    chip: 'bg-slate-100 text-slate-700 dark:bg-white/[0.07] dark:text-slate-300',
   },
   unpaid: {
     label: 'Unpaid',
     icon: Clock,
-    iconClass: 'text-[#d99a0b] dark:text-[#fab219]',
-    chip: 'bg-amber-50 text-amber-800 ring-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/25',
+    iconClass: 'text-amber-600 dark:text-amber-400',
+    chip: 'bg-amber-50 text-amber-800 dark:bg-amber-400/10 dark:text-amber-300',
   },
   overdue: {
     label: 'Overdue',
     icon: TriangleAlert,
-    iconClass: 'text-[#d03b3b]',
-    chip: 'bg-red-50 text-red-800 ring-red-600/20 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/25',
+    iconClass: 'text-red-600 dark:text-red-400',
+    chip: 'bg-red-50 text-red-700 dark:bg-red-400/10 dark:text-red-300',
   },
   no_fees: {
     label: 'No fees',
     icon: Minus,
     iconClass: 'text-slate-400',
-    chip: 'bg-white text-slate-500 ring-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:ring-slate-700',
+    chip: 'bg-transparent text-slate-500 dark:text-slate-400',
   },
 };
 
@@ -148,12 +149,12 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
   const hasFilters = debouncedSearch !== '' || status !== 'all';
 
   return (
-    <section aria-labelledby={`${searchId}-title`} className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <section aria-labelledby={`${searchId}-title`} className="rounded-xl border border-line bg-surface">
       {/* Header + totals */}
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-line px-5 py-4">
         <div>
-          <h2 id={`${searchId}-title`} className="text-base font-semibold text-slate-900 dark:text-slate-50">
-            Fee collection
+          <h2 id={`${searchId}-title`} className="text-[15px] font-semibold text-slate-900 dark:text-white">
+            Fee ledger
           </h2>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
             {rows[0]?.academicYear ? `Academic year ${rows[0].academicYear.name}. ` : ''}
@@ -164,8 +165,8 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 px-6 py-4">
-        <div className="relative w-72">
+      <div className="flex flex-wrap items-center gap-3 px-5 py-3.5">
+        <div className="relative w-full sm:w-72">
           <label htmlFor={searchId} className="sr-only">
             Search students
           </label>
@@ -176,7 +177,7 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search name or admission no."
-            className="block w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-8 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-900/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-white/20 [&::-webkit-search-cancel-button]:hidden"
+            className={cx(controlClass, 'h-10 pl-9 pr-8 sm:h-9')}
           />
           {search && (
             <button
@@ -190,7 +191,7 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
           )}
         </div>
 
-        <div role="radiogroup" aria-label="Filter by payment status" className="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+        <div role="radiogroup" aria-label="Filter by payment status" className="inline-flex rounded-[10px] border border-line bg-slate-100/80 p-[3px] dark:bg-white/[0.04]">
           {STATUS_FILTERS.map((option) => {
             const active = status === option.value;
             return (
@@ -201,9 +202,9 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
                 aria-checked={active}
                 onClick={() => setStatus(option.value)}
                 className={[
-                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:focus-visible:ring-slate-300',
+                  'h-8 rounded-[7px] px-3 text-13 font-medium transition-colors',
                   active
-                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-white'
+                    ? 'bg-surface text-slate-900 shadow-[0_1px_2px_rgb(14_26_51/0.08),0_0_0_1px_rgb(14_26_51/0.04)] dark:bg-white/10 dark:text-white dark:shadow-none'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
                 ].join(' ')}
               >
@@ -215,14 +216,14 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
 
         <div className="ml-auto flex items-center gap-2">
           {loading && result && <LoaderCircle className="h-4 w-4 animate-spin text-slate-400" aria-label="Updating" />}
-          <label htmlFor={sortId} className="text-sm text-slate-500 dark:text-slate-400">
+          <label htmlFor={sortId} className="whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
             Sort by
           </label>
           <select
             id={sortId}
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-lg border border-slate-300 bg-white py-1.5 pl-3 pr-8 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-900/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            className={cx(controlClass, 'h-10 w-auto sm:h-9')}
           >
             <option value="pending">Highest pending</option>
             <option value="name">Student name</option>
@@ -233,27 +234,27 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
 
       {/* Table */}
       <div className="relative overflow-x-auto">
-        <table className="w-full min-w-[920px] border-t border-slate-100 text-sm dark:border-slate-800" aria-busy={loading}>
+        <table className="w-full min-w-[920px] border-t border-line text-sm" aria-busy={loading}>
           <caption className="sr-only">Students with total fee, amount paid, amount pending and payment status</caption>
           <thead>
-            <tr className="bg-slate-50/70 text-left text-xs font-medium text-slate-500 dark:bg-slate-800/30 dark:text-slate-400">
-              <th scope="col" className="px-6 py-2.5 font-medium">Student</th>
+            <tr className="bg-surface-muted text-left text-13 font-medium text-slate-500 dark:text-slate-400">
+              <th scope="col" className="px-5 py-2.5 font-medium">Student</th>
               <th scope="col" className="px-4 py-2.5 font-medium">Class</th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">Total fee</th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">Paid</th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">Pending</th>
               <th scope="col" className="px-4 py-2.5 font-medium">Status</th>
-              <th scope="col" className="px-6 py-2.5 text-right font-medium">
+              <th scope="col" className="px-5 py-2.5 text-right font-medium">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
-          <tbody className={`divide-y divide-slate-100 dark:divide-slate-800 ${loading && result ? 'opacity-60' : ''}`}>
+          <tbody className={`divide-y divide-line ${loading && result ? 'opacity-60' : ''}`}>
             {!result && loading && <SkeletonRows />}
 
             {error && (
               <tr>
-                <td colSpan={7} className="px-6 py-14 text-center">
+                <td colSpan={7} className="px-5 py-14 text-center">
                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Couldn&apos;t load students</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{error}</p>
                   <button
@@ -269,7 +270,7 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
 
             {!error && result && rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-14 text-center">
+                <td colSpan={7} className="px-5 py-14 text-center">
                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100">No students match these filters</p>
                   {hasFilters && (
                     <button
@@ -297,7 +298,7 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
 
       {/* Pagination */}
       {meta && meta.total > 0 && (
-        <div className="flex items-center justify-between border-t border-slate-100 px-6 py-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        <div className="flex items-center justify-between border-t border-line px-5 py-3 text-13 text-slate-500 dark:text-slate-400">
           <p className="tabular-nums">
             Showing {firstRow}–{lastRow} of {meta.total.toLocaleString('en-IN')} students
           </p>
@@ -322,8 +323,8 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
       {/* Toast */}
       <div aria-live="polite" className="pointer-events-none fixed bottom-6 right-6 z-[60]">
         {toast && (
-          <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-            <CircleCheck className="h-5 w-5 text-[#0ca30c]" aria-hidden />
+          <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm text-slate-900 shadow-float dark:text-slate-100">
+            <CircleCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
             <span className="tabular-nums">{toast}</span>
             <button type="button" onClick={() => setToast(null)} aria-label="Dismiss" className="ml-2 rounded p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
               <X className="h-4 w-4" aria-hidden />
@@ -347,8 +348,8 @@ function StudentRow({ row, onCollect }: { row: StudentFeeRow; onCollect: () => v
   const classLabel = [row.class?.name, row.section?.name].filter(Boolean).join(' ') || 'Not assigned';
 
   return (
-    <tr className="transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/30">
-      <th scope="row" className="px-6 py-3 text-left font-normal">
+    <tr className="transition-colors hover:bg-slate-50/70 dark:hover:bg-white/[0.025]">
+      <th scope="row" className="px-5 py-3 text-left font-normal">
         <span className="block font-medium text-slate-900 dark:text-slate-100">{row.studentName}</span>
         <span className="block text-xs tabular-nums text-slate-500 dark:text-slate-400">{row.admissionNumber}</span>
       </th>
@@ -358,7 +359,7 @@ function StudentRow({ row, onCollect }: { row: StudentFeeRow; onCollect: () => v
         <span className="block text-slate-900 dark:text-slate-100">{formatInr(row.paid)}</span>
         {total > 0 && (
           <span className="ml-auto mt-1.5 block h-1 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-hidden>
-            <span className="block h-full rounded-full bg-[#2a78d6] dark:bg-[#3987e5]" style={{ width: `${paidShare}%` }} />
+            <span className="block h-full rounded-full bg-indigo-500 dark:bg-indigo-400" style={{ width: `${paidShare}%` }} />
           </span>
         )}
       </td>
@@ -371,18 +372,18 @@ function StudentRow({ row, onCollect }: { row: StudentFeeRow; onCollect: () => v
         )}
       </td>
       <td className="px-4 py-3">
-        <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${tag.chip}`}>
+        <span className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs font-medium ${tag.chip}`}>
           <TagIcon className={`h-3.5 w-3.5 ${tag.iconClass}`} aria-hidden />
           {tag.label}
         </span>
       </td>
-      <td className="px-6 py-3 text-right">
+      <td className="px-5 py-3 text-right">
         {pending > 0 ? (
           <button
             type="button"
             onClick={onCollect}
             aria-label={`Collect fee from ${row.studentName}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-900 hover:bg-slate-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-white dark:hover:bg-white dark:hover:text-slate-900 dark:focus-visible:ring-slate-300 dark:focus-visible:ring-offset-slate-900"
+            className={buttonClass({ variant: 'secondary', size: 'sm' })}
           >
             <IndianRupee className="h-3.5 w-3.5" aria-hidden />
             Collect fee
@@ -402,18 +403,18 @@ function Totals({ totals }: { totals: StudentFeeList['meta']['totals'] }) {
   return (
     <dl className="flex flex-wrap items-end gap-x-8 gap-y-3">
       <div>
-        <dt className="text-xs text-slate-500 dark:text-slate-400">Total fee</dt>
+        <dt className="text-13 text-slate-500 dark:text-slate-400">Total fee</dt>
         <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50">{formatInr(totals.totalFee)}</dd>
       </div>
       <div>
-        <dt className="text-xs text-slate-500 dark:text-slate-400">Collected</dt>
+        <dt className="text-13 text-slate-500 dark:text-slate-400">Collected</dt>
         <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50">
           {formatInr(totals.paid)}
           <span className="ml-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">{share.toFixed(1)}%</span>
         </dd>
       </div>
       <div>
-        <dt className="text-xs text-slate-500 dark:text-slate-400">Pending</dt>
+        <dt className="text-13 text-slate-500 dark:text-slate-400">Pending</dt>
         <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50">{formatInr(totals.pending)}</dd>
       </div>
     </dl>
@@ -427,7 +428,7 @@ function PageButton({ label, disabled, onClick, children }: { label: string; dis
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+      className="rounded-md border border-line p-1.5 text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
     >
       {children}
     </button>
@@ -440,8 +441,8 @@ function SkeletonRows() {
       {Array.from({ length: 6 }, (_, i) => (
         <tr key={i} aria-hidden>
           {[40, 20, 16, 16, 16, 14, 18].map((w, j) => (
-            <td key={j} className={j === 0 ? 'px-6 py-4' : 'px-4 py-4'}>
-              <span className="block h-3.5 animate-pulse rounded bg-slate-100 dark:bg-slate-800" style={{ width: `${w * 3}px` }} />
+            <td key={j} className={j === 0 ? 'px-5 py-4' : 'px-4 py-4'}>
+              <span className="block h-3.5 animate-pulse rounded bg-slate-200/70 dark:bg-white/[0.06]" style={{ width: `${w * 3}px` }} />
             </td>
           ))}
         </tr>

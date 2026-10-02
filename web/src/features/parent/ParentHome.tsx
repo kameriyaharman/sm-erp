@@ -191,7 +191,7 @@ function UrgentAlerts({ home, now, schoolPhone, payHref }: { home: ChildHome; no
           {callNumber && (
             <a
               href={telHref(callNumber)}
-              className="mt-3 inline-flex items-center gap-3 rounded-xl bg-white py-2 pl-3 pr-4 text-left text-red-800 shadow-sm ring-1 ring-red-200 hover:bg-red-50 dark:bg-red-500/15 dark:text-red-100 dark:ring-red-400/30 dark:hover:bg-red-500/25"
+              className="mt-3 inline-flex items-center gap-3 rounded-lg bg-white py-2 pl-3 pr-4 text-left text-red-800 shadow-sm ring-1 ring-red-200 hover:bg-red-50 dark:bg-red-500/15 dark:text-red-100 dark:ring-red-400/30 dark:hover:bg-red-500/25"
             >
               <Phone className="h-4 w-4 shrink-0" aria-hidden />
               <span>
@@ -211,7 +211,7 @@ function UrgentAlerts({ home, now, schoolPhone, payHref }: { home: ChildHome; no
           </p>
           <Link
             href={payHref}
-            className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-[#0b6b78] px-4 text-sm font-semibold text-white shadow-sm hover:bg-[#095a65] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] focus-visible:ring-offset-2 dark:bg-[#5cc0cc] dark:text-stone-950 dark:hover:bg-[#7dd0da] dark:focus-visible:ring-offset-stone-950"
+            className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-200 dark:focus-visible:ring-offset-stone-950"
           >
             Pay {inr.format(due)} now
           </Link>
@@ -249,10 +249,10 @@ function Alert({
 }) {
   const styles =
     tone === 'critical'
-      ? { box: 'border-red-200 bg-red-50 text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100', icon: 'bg-[#d03b3b] text-white' }
-      : { box: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100', icon: 'bg-[#fab219] text-amber-950' };
+      ? { box: 'border-red-200 bg-red-50 text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100', icon: 'bg-red-600 text-white' }
+      : { box: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100', icon: 'bg-marigold-400 text-amber-950' };
   return (
-    <div role={tone === 'critical' ? 'alert' : 'status'} className={`relative flex gap-3 rounded-2xl border p-4 ${styles.box}`}>
+    <div role={tone === 'critical' ? 'alert' : 'status'} className={`relative flex gap-3 rounded-xl border p-4 ${styles.box}`}>
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${styles.icon}`} aria-hidden>
         <AlertIcon className="h-[18px] w-[18px]" />
       </span>
@@ -354,14 +354,14 @@ function QuickActions({ home, now, links }: { home: ChildHome; now: Date; links:
         <li key={label}>
           <Link
             href={href}
-            className="group flex h-full min-h-[7.5rem] flex-col justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgba(28,25,23,0.04)] transition-colors hover:border-[#0b6b78]/40 active:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] dark:border-stone-800 dark:bg-stone-900 dark:hover:border-[#5cc0cc]/40 dark:active:bg-stone-800"
+            className="group flex h-full min-h-[7.5rem] flex-col justify-between gap-3 rounded-xl border border-stone-200 bg-white p-4  transition-colors hover:border-indigo-600/40 active:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:border-line dark:bg-surface dark:hover:border-indigo-300/40 dark:active:bg-stone-800"
           >
             <span className="flex items-start justify-between">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f1f2] text-[#0b6b78] dark:bg-[#0b6b78]/30 dark:text-[#7dd0da]">
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-600/30 dark:text-indigo-200">
                 <TileIcon className="h-5 w-5" aria-hidden />
               </span>
               {badge && (
-                <span className="rounded-full bg-[#0b6b78] px-2 py-0.5 text-[11px] font-bold text-white dark:bg-[#5cc0cc] dark:text-stone-950">
+                <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[11px] font-bold text-white dark:bg-indigo-500 dark:text-white">
                   {badge}
                 </span>
               )}
@@ -411,29 +411,30 @@ function Timetable({ home, now, allHref }: { home: ChildHome; now: Date; allHref
               aria-selected={selected}
               onClick={() => setDay(d)}
               className={[
-                'flex flex-col items-center rounded-xl py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]',
+                'flex flex-col items-center rounded-lg py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600',
                 selected
-                  ? 'bg-[#0b6b78] text-white dark:bg-[#5cc0cc] dark:text-stone-950'
-                  : 'bg-white text-stone-600 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-stone-900 dark:text-stone-300 dark:ring-stone-800 dark:hover:bg-stone-800',
+                  ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white'
+                  : 'bg-white text-stone-600 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-surface dark:text-stone-300 dark:ring-line dark:hover:bg-white/5',
               ].join(' ')}
             >
               <span className="font-medium">{WEEKDAYS[d]}</span>
-              <span className={`text-base font-semibold tabular-nums ${d === todayIdx && !selected ? 'text-[#0b6b78] dark:text-[#5cc0cc]' : ''}`}>{date.getDate()}</span>
+              <span className={`text-base font-semibold tabular-nums ${d === todayIdx && !selected ? 'text-marigold-700 dark:text-marigold-300' : ''}`}>{date.getDate()}</span>
+              <span aria-hidden className={`mt-1 h-[3px] w-4 rounded-full ${d === todayIdx ? 'bg-marigold-400' : 'bg-transparent'}`} />
             </button>
           );
         })}
       </div>
 
       {absentToday && (
-        <p className="mb-3 rounded-xl bg-stone-100 px-3 py-2 text-xs text-stone-600 dark:bg-stone-900 dark:text-stone-400">
+        <p className="mb-3 rounded-lg bg-stone-100 px-3 py-2 text-xs text-stone-600 dark:bg-surface dark:text-stone-400">
           {home.child.firstName} is absent today. Here is what the class is covering, for catching up.
         </p>
       )}
 
       {periods.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-stone-300 px-4 py-8 text-center text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400">No classes scheduled.</p>
+        <p className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-center text-sm text-stone-500 dark:border-line-strong dark:text-stone-400">No classes scheduled.</p>
       ) : (
-        <ol className="overflow-hidden rounded-2xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
+        <ol className="overflow-hidden rounded-xl border border-stone-200 bg-white dark:border-line dark:bg-surface">
           {periods.map((p, i) => (
             <PeriodRow key={p.id} period={p} first={i === 0} state={!isToday ? 'other' : nowMin >= minutesOf(p.end) ? 'past' : nowMin >= minutesOf(p.start) ? 'now' : 'upcoming'} />
           ))}
@@ -451,14 +452,14 @@ function PeriodRow({ period, state, first }: { period: Period; state: 'past' | '
       aria-current={state === 'now' ? 'time' : undefined}
       className={[
         'flex items-center gap-4 px-4',
-        first ? '' : 'border-t border-stone-100 dark:border-stone-800',
-        isBreak ? 'bg-stone-50/70 py-2 dark:bg-stone-950/40' : 'py-3',
-        state === 'now' ? 'bg-[#e3f1f2] dark:bg-[#0b6b78]/20' : '',
+        first ? '' : 'border-t border-stone-100 dark:border-line',
+        isBreak ? 'bg-stone-50/70 py-2 dark:bg-canvas/40' : 'py-3',
+        state === 'now' ? 'bg-indigo-50 dark:bg-indigo-600/20' : '',
         state === 'past' ? 'opacity-55' : '',
       ].join(' ')}
     >
       <span className="w-12 shrink-0 text-right text-xs tabular-nums text-stone-500 dark:text-stone-400">
-        <span className={`block font-semibold ${state === 'now' ? 'text-[#0b6b78] dark:text-[#7dd0da]' : 'text-stone-700 dark:text-stone-300'}`}>{to12h(period.start)}</span>
+        <span className={`block font-semibold ${state === 'now' ? 'text-indigo-600 dark:text-indigo-200' : 'text-stone-700 dark:text-stone-300'}`}>{to12h(period.start)}</span>
         {!isBreak && <span className="block">{to12h(period.end)}</span>}
       </span>
       <span className="min-w-0 flex-1">
@@ -466,7 +467,7 @@ function PeriodRow({ period, state, first }: { period: Period; state: 'past' | '
         {!isBreak && meta && <span className="block truncate text-xs text-stone-500 dark:text-stone-400">{meta}</span>}
       </span>
       {state === 'now' && (
-        <span className="shrink-0 rounded-full bg-[#0b6b78] px-2 py-0.5 text-[11px] font-bold text-white dark:bg-[#5cc0cc] dark:text-stone-950">Now</span>
+        <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-[11px] font-bold text-white dark:bg-indigo-500 dark:text-white">Now</span>
       )}
     </li>
   );
@@ -494,7 +495,7 @@ function HomeworkList({ home, now, allHref }: { home: ChildHome; now: Date; allH
     <section aria-labelledby="homework-title">
       <SectionHeader id="homework-title" icon={BookOpenCheck} title="Recent homework" action={{ label: 'See all', href: allHref }} />
       {items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-stone-300 px-4 py-8 text-center text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400">
+        <p className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-center text-sm text-stone-500 dark:border-line-strong dark:text-stone-400">
           No homework uploaded in the last week.
         </p>
       ) : (
@@ -504,17 +505,17 @@ function HomeworkList({ home, now, allHref }: { home: ChildHome; now: Date; allH
             const due = dueLabel(item, now);
             const panelId = `hw-panel-${item.id}`;
             return (
-              <li key={item.id} className="rounded-2xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
+              <li key={item.id} className="rounded-xl border border-stone-200 bg-white dark:border-line dark:bg-surface">
                 <button
                   type="button"
                   aria-expanded={open}
                   aria-controls={panelId}
                   onClick={() => setOpenId(open ? null : item.id)}
-                  className="flex w-full items-start gap-3 rounded-2xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]"
+                  className="flex w-full items-start gap-3 rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
                 >
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-xs font-semibold text-[#0b6b78] dark:text-[#7dd0da]">{item.subject}</span>
+                      <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-200">{item.subject}</span>
                       <DueChip {...due} />
                     </span>
                     <span className={`mt-1 block text-[15px] font-medium leading-snug ${open ? '' : 'line-clamp-2'}`}>{item.title}</span>
@@ -533,7 +534,7 @@ function HomeworkList({ home, now, allHref }: { home: ChildHome; now: Date; allH
                   </span>
                   <ChevronDown className={`mt-1 h-5 w-5 shrink-0 text-stone-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
                 </button>
-                <div id={panelId} hidden={!open} className="border-t border-stone-100 px-4 pb-4 pt-3 text-sm dark:border-stone-800">
+                <div id={panelId} hidden={!open} className="border-t border-stone-100 px-4 pb-4 pt-3 text-sm dark:border-line">
                   {item.details ? <p className="leading-relaxed text-stone-700 dark:text-stone-300">{item.details}</p> : <p className="text-stone-500 dark:text-stone-400">No extra instructions.</p>}
                   {item.attachments.length > 0 && (
                     <ul className="mt-3 flex flex-col gap-2">
@@ -543,9 +544,9 @@ function HomeworkList({ home, now, allHref }: { home: ChildHome; now: Date; allH
                             href={file.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex items-center gap-3 rounded-xl bg-stone-50 px-3 py-2.5 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-stone-950 dark:ring-stone-800 dark:hover:bg-stone-800"
+                            className="flex items-center gap-3 rounded-lg bg-stone-50 px-3 py-2.5 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-canvas dark:ring-line dark:hover:bg-white/5"
                           >
-                            <FileText className="h-4 w-4 shrink-0 text-[#0b6b78] dark:text-[#7dd0da]" aria-hidden />
+                            <FileText className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-200" aria-hidden />
                             <span className="min-w-0 flex-1 truncate font-medium">{file.name}</span>
                             {file.sizeKb !== undefined && (
                               <span className="shrink-0 text-xs tabular-nums text-stone-500 dark:text-stone-400">
@@ -573,7 +574,7 @@ function DueChip({ text, tone }: { text: string; tone: 'critical' | 'warning' | 
       ? 'bg-red-50 text-red-800 ring-red-200 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/30'
       : tone === 'warning'
         ? 'bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-200 dark:ring-amber-400/30'
-        : 'bg-stone-100 text-stone-600 ring-stone-200 dark:bg-stone-800 dark:text-stone-300 dark:ring-stone-700';
+        : 'bg-stone-100 text-stone-600 ring-stone-200 dark:bg-white/[0.06] dark:text-stone-300 dark:ring-line-strong';
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${cls}`}>
       {tone === 'critical' && <CircleAlert className="h-3 w-3" aria-hidden />}
@@ -593,7 +594,7 @@ function SectionHeader({ id, icon: HeaderIcon, title, action }: { id: string; ic
         {title}
       </h2>
       {action && (
-        <Link href={action.href} className="rounded-lg px-2 py-1 text-sm font-semibold text-[#0b6b78] hover:bg-[#e3f1f2] dark:text-[#7dd0da] dark:hover:bg-[#0b6b78]/20">
+        <Link href={action.href} className="rounded-lg px-2 py-1 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-200 dark:hover:bg-indigo-600/20">
           {action.label}
         </Link>
       )}

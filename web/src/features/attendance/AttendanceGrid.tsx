@@ -226,18 +226,18 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
   const switchLocked = changedCount > 0;
 
   return (
-    <div className="mx-auto w-full max-w-5xl pb-36 lg:pb-8">
+    <div className="mx-auto w-full max-w-content pb-36 lg:pb-8">
       {/* ------------------------------------------------ header */}
       <header className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-slate-50">Attendance</h1>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Attendance</h1>
             <p className="mt-0.5 truncate text-sm text-slate-500 dark:text-slate-400">
               {roster ? `${roster.section.branchName}, ${roster.section.academicYear}` : 'Loading your classes'}
             </p>
           </div>
           {roster?.submission && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/25">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300">
               <CheckCheck className="h-3.5 w-3.5" aria-hidden />
               Submitted
             </span>
@@ -246,7 +246,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <div>
-            <label htmlFor={ids.section} className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+            <label htmlFor={ids.section} className="mb-1.5 block text-13 font-medium text-slate-700 dark:text-slate-300">
               Class and section
             </label>
             <select
@@ -254,7 +254,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
               value={sectionId}
               disabled={!sections || switchLocked || submitting}
               onChange={(e) => setSectionId(e.target.value)}
-              className="block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-900/15 disabled:opacity-60 sm:text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="block h-11 w-full rounded-lg lg:h-10 border border-line-strong bg-surface px-3 text-base font-medium text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-[3px] focus:ring-indigo-500/20 disabled:opacity-60 sm:text-sm dark:border-slate-700 dark:text-slate-100"
             >
               {!sections && <option>Loading</option>}
               {sections?.map((s) => (
@@ -268,7 +268,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
             </select>
           </div>
           <div>
-            <label htmlFor={ids.date} className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+            <label htmlFor={ids.date} className="mb-1.5 block text-13 font-medium text-slate-700 dark:text-slate-300">
               Date
             </label>
             {allowDateChange && roster ? (
@@ -281,7 +281,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
                   max={roster.today}
                   disabled={switchLocked || submitting}
                   onChange={(e) => e.target.value && setDate(e.target.value)}
-                  className="block h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-900/15 disabled:opacity-60 sm:w-48 sm:text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="block h-11 w-full rounded-lg lg:h-10 border border-line-strong bg-surface pl-9 pr-3 text-base text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-[3px] focus:ring-indigo-500/20 disabled:opacity-60 sm:w-48 sm:text-sm dark:border-slate-700 dark:text-slate-100"
                 />
               </div>
             ) : (
@@ -349,7 +349,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Name or roll no."
-                className="block h-10 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-900/15 sm:text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="block h-10 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-[3px] focus:ring-indigo-500/20 sm:text-sm dark:border-slate-700 dark:text-slate-100"
               />
             </div>
             <button
@@ -357,17 +357,17 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
               aria-pressed={absentOnly}
               onClick={() => setAbsentOnly((v) => !v)}
               className={[
-                'h-10 shrink-0 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900',
+                'h-10 shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
                 absentOnly
                   ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800',
+                  : 'border-line-strong bg-surface text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5',
               ].join(' ')}
             >
               Absent <span className="tabular-nums">({counts.absent})</span>
             </button>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <div className="overflow-hidden rounded-xl border border-line bg-surface">
             {loadingRoster && !roster ? (
               <SkeletonList />
             ) : visibleStudents.length === 0 ? (
@@ -375,7 +375,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
                 {students.length === 0 ? 'No students are enrolled in this section.' : absentOnly ? 'Nobody is marked absent.' : 'No student matches your search.'}
               </p>
             ) : (
-              <ul className={`divide-y divide-slate-100 dark:divide-slate-800 ${loadingRoster ? 'opacity-70' : ''}`}>
+              <ul className={`divide-y divide-line ${loadingRoster ? 'opacity-70' : ''}`}>
                 {visibleStudents.map((s) => (
                   <StudentRow
                     key={s.studentId}
@@ -393,7 +393,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
 
         {/* desktop summary panel */}
         <aside className="hidden lg:block">
-          <div className="sticky top-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+          <div className="sticky top-20 flex flex-col gap-4 rounded-xl border border-line bg-surface p-5">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               {roster ? `${roster.section.label}, ${formatDay(roster.date, roster.today)}` : 'Summary'}
             </h2>
@@ -416,10 +416,10 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
 
       {/* mobile bottom bar */}
       <div
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-4 pt-3 backdrop-blur lg:hidden dark:border-slate-800 dark:bg-slate-900/95"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 pt-3 backdrop-blur lg:hidden"
         style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
       >
-        <div className="mx-auto flex max-w-5xl items-center gap-3">
+        <div className="mx-auto flex max-w-content items-center gap-3">
           <p className="min-w-0 flex-1 text-sm text-slate-600 dark:text-slate-300">
             <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{counts.present + counts.other}</span> present
             <span className="mx-1.5 text-slate-300 dark:text-slate-600" aria-hidden>/</span>
@@ -492,8 +492,8 @@ const StudentRow = memo(function StudentRow({
         disabled={disabled}
         onClick={() => onToggle(student.studentId)}
         className={[
-          'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900 disabled:cursor-default sm:px-5 dark:focus-visible:ring-slate-300',
-          present ? 'hover:bg-slate-50 dark:hover:bg-slate-800/40' : 'bg-red-50/70 hover:bg-red-50 dark:bg-red-500/[0.07] dark:hover:bg-red-500/10',
+          'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:cursor-default sm:px-5 dark:focus-visible:ring-slate-300',
+          present ? 'hover:bg-slate-50/70 dark:hover:bg-white/[0.025]' : 'bg-red-50/70 hover:bg-red-50 dark:bg-red-500/[0.07] dark:hover:bg-red-500/10',
         ].join(' ')}
       >
         <span
@@ -509,7 +509,7 @@ const StudentRow = memo(function StudentRow({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="truncate text-[15px] font-medium text-slate-900 dark:text-slate-100">{student.name}</span>
-            {changed && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#2a78d6] dark:bg-[#3987e5]" title="Changed, not saved yet" aria-hidden />}
+            {changed && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500 dark:bg-indigo-400" title="Changed, not saved yet" aria-hidden />}
           </span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
             <span className="tabular-nums">{student.admissionNumber}</span>
@@ -633,7 +633,7 @@ function SubmitButton({
       onClick={onClick}
       disabled={disabled}
       className={[
-        'inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 font-semibold text-white shadow-sm transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900 dark:disabled:bg-slate-800 dark:disabled:text-slate-500',
+        'inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:disabled:bg-white/[0.06] dark:disabled:text-slate-500',
         compact ? 'h-11 px-4 text-sm' : 'h-11 w-full text-sm',
       ].join(' ')}
     >
@@ -645,13 +645,13 @@ function SubmitButton({
 
 function Banner({ tone, icon: Icon, children }: { tone: 'info' | 'neutral' | 'danger' | 'success'; icon: typeof Lock; children: ReactNode }) {
   const tones = {
-    info: 'border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200',
-    neutral: 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300',
+    info: 'border-indigo-200 bg-indigo-50/70 text-indigo-900 dark:border-indigo-400/25 dark:bg-indigo-400/10 dark:text-indigo-100',
+    neutral: 'border-line bg-surface text-slate-700 dark:text-slate-300',
     danger: 'border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300',
     success: 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200',
   };
   return (
-    <div className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${tones[tone]}`}>
+    <div className={`flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm ${tones[tone]}`}>
       <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
       <p className="min-w-0">{children}</p>
     </div>
@@ -714,13 +714,13 @@ function ConfirmSheet(props: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
-      <div className="absolute inset-0 bg-slate-950/40 dark:bg-black/60" aria-hidden onClick={props.onCancel} />
+      <div className="absolute inset-0 bg-ink-950/45" aria-hidden onClick={props.onCancel} />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={props.titleId}
-        className="relative flex max-h-[85vh] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-md sm:rounded-2xl dark:bg-slate-900"
+        className="relative flex max-h-[85vh] w-full flex-col rounded-t-2xl border border-line bg-surface shadow-pop sm:max-w-md sm:rounded-2xl"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-300 sm:hidden dark:bg-slate-700" aria-hidden />
@@ -739,7 +739,7 @@ function ConfirmSheet(props: {
               <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">Absent</h3>
               <ul className="mt-1.5 flex flex-wrap gap-1.5">
                 {props.absent.map((s) => (
-                  <li key={s.studentId} className="rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-800 dark:bg-red-500/10 dark:text-red-300">
+                  <li key={s.studentId} className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-800 dark:bg-red-500/10 dark:text-red-300">
                     {s.rollNumber ? `${s.rollNumber}. ` : ''}
                     {s.name}
                   </li>
@@ -758,7 +758,7 @@ function ConfirmSheet(props: {
           </p>
 
           {props.error && (
-            <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+            <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
               {props.error.message}
               {rosterChanged && (
                 <button type="button" onClick={props.onReload} className="ml-1 font-semibold underline underline-offset-2">
@@ -769,12 +769,12 @@ function ConfirmSheet(props: {
           )}
         </div>
 
-        <div className="flex gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+        <div className="flex gap-2 border-t border-line px-5 py-4">
           <button
             type="button"
             onClick={props.onCancel}
             disabled={props.submitting}
-            className="h-11 flex-1 rounded-xl border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="h-11 flex-1 rounded-lg border border-line-strong text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             Go back
           </button>
@@ -783,7 +783,7 @@ function ConfirmSheet(props: {
             data-autofocus
             onClick={props.onConfirm}
             disabled={props.submitting}
-            className="inline-flex h-11 flex-[1.4] items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-semibold text-white hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900"
+            className="inline-flex h-11 flex-[1.4] items-center justify-center gap-2 rounded-lg bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 dark:bg-indigo-500 dark:hover:bg-indigo-400"
           >
             {props.submitting ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <Send className="h-4 w-4" aria-hidden />}
             {props.submitting ? 'Submitting' : props.confirmLabel}
@@ -806,15 +806,15 @@ function FullState({ icon: Icon, title, body }: { icon: typeof Lock; title: stri
 
 function SkeletonList() {
   return (
-    <ul aria-hidden className="divide-y divide-slate-100 dark:divide-slate-800">
+    <ul aria-hidden className="divide-y divide-line">
       {Array.from({ length: 8 }, (_, i) => (
         <li key={i} className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
-          <span className="h-9 w-9 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+          <span className="h-9 w-9 animate-pulse rounded-full bg-slate-200/70 dark:bg-white/[0.06]" />
           <span className="flex-1 space-y-1.5">
-            <span className="block h-3.5 w-40 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
-            <span className="block h-3 w-24 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
+            <span className="block h-3.5 w-40 animate-pulse rounded bg-slate-200/70 dark:bg-white/[0.06]" />
+            <span className="block h-3 w-24 animate-pulse rounded bg-slate-200/70 dark:bg-white/[0.06]" />
           </span>
-          <span className="h-7 w-12 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+          <span className="h-7 w-12 animate-pulse rounded-full bg-slate-200/70 dark:bg-white/[0.06]" />
         </li>
       ))}
     </ul>

@@ -72,7 +72,7 @@ export default function MyClass() {
   return (
     <Page wide>
       <PageHeader
-        title={section ? `My class · ${section.label}` : 'My class'}
+        title={section ? `My class: ${section.label}` : 'My class'}
         description="Class roster with parent contacts, and the class timetable for the week."
         actions={
           mine.length > 1 ? (
@@ -141,7 +141,7 @@ export default function MyClass() {
           )}
         </Card>
 
-        <Card title={<span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-slate-400" aria-hidden /> Timetable</span>} padded={false} className="min-w-0 xl:col-span-3">
+        <Card title={<span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-slate-400" aria-hidden /> Timetable</span>} padded={false} className="min-w-0 xl:col-span-3 xl:self-start">
           {timetable.error ? (
             <ErrorState message={timetable.error} onRetry={timetable.reload} />
           ) : !timetable.data ? (
@@ -179,7 +179,7 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
     <>
       {/* Phone: one day at a time */}
       <div className="md:hidden">
-        <div role="tablist" aria-label="Day" className="grid grid-cols-6 gap-1 border-b border-slate-100 p-3 dark:border-slate-800">
+        <div role="tablist" aria-label="Day" className="grid grid-cols-6 gap-1 border-b border-line p-3">
           {DAYS.map((d) => (
             <button
               key={d}
@@ -189,7 +189,7 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
               onClick={() => setDay(d)}
               className={cx(
                 'rounded-lg py-1.5 text-xs font-semibold',
-                d === day ? 'bg-indigo-600 text-white' : d === today ? 'text-indigo-700 ring-1 ring-inset ring-indigo-300 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+                d === day ? 'bg-indigo-600 text-white' : d === today ? 'text-marigold-700 ring-1 ring-inset ring-marigold-300 dark:text-marigold-300' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
               )}
             >
               {WEEKDAY_SHORT[d]}
@@ -200,7 +200,7 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
           {(tt.days[String(day)] ?? []).map((p) => (
             <li
               key={`${p.periodNo}-${p.start}`}
-              className={cx('flex items-center gap-3 border-b border-slate-100 px-4 py-2.5 last:border-0 dark:border-slate-800', p.kind !== 'class' && 'bg-slate-50 dark:bg-slate-950/40', isNow(day, p) && 'bg-indigo-50 dark:bg-indigo-500/10')}
+              className={cx('flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0', p.kind !== 'class' && 'bg-slate-50 dark:bg-slate-950/40', isNow(day, p) && 'bg-indigo-50 dark:bg-indigo-500/10')}
             >
               <span className="w-[4.5rem] shrink-0 text-xs tabular-nums text-slate-500">
                 {formatTime(p.start)}
@@ -219,7 +219,7 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
         <table className="w-full min-w-[640px] table-fixed border-collapse text-xs">
           <thead>
             <tr>
-              <th scope="col" className="w-20 border-b border-slate-200 bg-slate-50 px-2 py-2 text-left font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/60">
+              <th scope="col" className="w-20 border-b border-line bg-surface-muted px-2 py-2 text-left font-medium text-slate-500">
                 Time
               </th>
               {DAYS.map((d) => (
@@ -227,8 +227,8 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
                   key={d}
                   scope="col"
                   className={cx(
-                    'border-b border-slate-200 px-2 py-2 text-left font-semibold uppercase tracking-wide dark:border-slate-800',
-                    d === today ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' : 'bg-slate-50 text-slate-500 dark:bg-slate-900/60',
+                    'border-b border-line px-2 py-2 text-left font-medium',
+                    d === today ? 'bg-marigold-50 text-marigold-700 shadow-[inset_0_-2px_0_theme(colors.marigold.400)] dark:bg-marigold-400/10 dark:text-marigold-300' : 'bg-surface-muted text-slate-500',
                   )}
                 >
                   {WEEKDAY_SHORT[d]}
@@ -240,7 +240,7 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
           <tbody>
             {slots.map((slot) => (
               <tr key={`${slot.start}-${slot.end}`}>
-                <th scope="row" className="border-b border-slate-100 px-2 py-2 text-left align-top font-normal tabular-nums text-slate-500 dark:border-slate-800">
+                <th scope="row" className="border-b border-line px-2 py-2 text-left align-top font-normal tabular-nums text-slate-500">
                   {formatTime(slot.start)}
                   <br />
                   <span className="text-slate-400">{formatTime(slot.end)}</span>
@@ -252,8 +252,8 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
                       key={d}
                       aria-current={p && isNow(d, p) ? 'time' : undefined}
                       className={cx(
-                        'border-b border-l border-slate-100 px-2 py-2 align-top dark:border-slate-800',
-                        d === today && 'bg-indigo-50/50 dark:bg-indigo-500/5',
+                        'border-b border-l border-line px-2 py-2 align-top',
+                        d === today && 'bg-marigold-50/50 dark:bg-marigold-400/5',
                         p && p.kind !== 'class' && 'bg-slate-50 dark:bg-slate-950/40',
                         p && isNow(d, p) && 'bg-indigo-100 ring-2 ring-inset ring-indigo-500 dark:bg-indigo-500/20',
                       )}
@@ -277,7 +277,7 @@ function PeriodText({ p, compact = false }: { p: TimetableSlot; compact?: boolea
     <span className="min-w-0">
       <span className={cx('block font-semibold', compact ? 'truncate text-xs' : 'text-sm')}>{p.label}</span>
       {(p.teacher || p.room) && (
-        <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">{[p.teacher?.name, p.room].filter(Boolean).join(' · ')}</span>
+        <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">{[p.teacher?.name, p.room].filter(Boolean).join(', ')}</span>
       )}
     </span>
   );

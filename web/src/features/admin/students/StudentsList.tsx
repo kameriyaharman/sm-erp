@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, UserPlus } from 'lucide-react';
-import { Button, Card, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Th } from '@/components/ui';
+import { Button, Card, controlClass, cx, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Th } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { formatDate, titleCase } from '@/lib/format';
 import { Avatar, FilterBar, PhoneLink, StudentStatusBadge, useClasses, useDebounced } from '../shared';
@@ -55,7 +55,7 @@ export default function StudentsList() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Name, admission no., roll, phone"
-              className="block h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-950"
+              className={cx(controlClass, 'h-10 pl-9 sm:h-9')}
             />
           </label>
           <Select
@@ -119,7 +119,7 @@ export default function StudentsList() {
               </thead>
               <tbody>
                 {data.data.map((s) => (
-                  <tr key={s.id} onClick={() => router.push(`/students/${s.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                  <tr key={s.id} onClick={() => router.push(`/students/${s.id}`)} className="cursor-pointer hover:bg-slate-50/70 dark:hover:bg-white/[0.025]">
                     <Td>
                       <div className="flex items-center gap-3">
                         <Avatar name={s.name} />

@@ -60,7 +60,7 @@ export default function AttendanceHistory() {
     <Page wide>
       <PageHeader
         title="Attendance history"
-        description={h ? `${h.section.label} · ${formatMonth(month)}` : 'Month-wise registers for a class'}
+        description={h ? `${h.section.label}, ${formatMonth(month)}` : 'Month-wise registers for a class'}
         actions={
           <>
             <Select aria-label="Class" value={sectionId} onChange={(e) => setSectionId(e.target.value)} className="!w-52" disabled={!sections}>
@@ -105,7 +105,7 @@ export default function AttendanceHistory() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
             <Card title="Day by day" padded={false} className="min-w-0 lg:col-span-2">
-              <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              <ul className="divide-y divide-line">
                 {h.days.map((d) => {
                   const pct = d.total ? Math.round(((d.present + d.late + 0.5 * d.halfDay) / d.total) * 100) : 0;
                   return (
@@ -114,11 +114,11 @@ export default function AttendanceHistory() {
                         <span className="font-medium">{dayLabel(d.date)}</span>
                         <span className="tabular-nums text-slate-500 dark:text-slate-400">
                           <span className="text-emerald-700 dark:text-emerald-400">{d.present} P</span>
-                          {' · '}
+                          {', '}
                           <span className={d.absent ? 'font-semibold text-red-700 dark:text-red-400' : ''}>{d.absent} A</span>
-                          {d.late > 0 && <> · <span className="text-amber-700 dark:text-amber-400">{d.late} late</span></>}
-                          {d.leave > 0 && <> · {d.leave} leave</>}
-                          {d.halfDay > 0 && <> · {d.halfDay} half</>}
+                          {d.late > 0 && <>, <span className="text-amber-700 dark:text-amber-400">{d.late} late</span></>}
+                          {d.leave > 0 && <>, {d.leave} leave</>}
+                          {d.halfDay > 0 && <>, {d.halfDay} half</>}
                           <span className="ml-2 font-semibold text-slate-700 dark:text-slate-200">{pct}%</span>
                         </span>
                       </div>
@@ -131,7 +131,7 @@ export default function AttendanceHistory() {
                   );
                 })}
               </ul>
-              <ul className="flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-5" aria-label="Legend">
+              <ul className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400 sm:px-5" aria-label="Legend">
                 {SEGMENTS.map((s) => (
                   <li key={s.key} className="flex items-center gap-1.5">
                     <span className={cx('h-2 w-2 rounded-full', s.bar)} aria-hidden />

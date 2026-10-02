@@ -16,7 +16,7 @@ import type { ChildHome, ChildSummary, ParentHomeData, SchoolNotice } from './ty
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 export type ParentTab = 'home' | 'fees' | 'academics' | 'bus' | 'profile';
 
-export const ACCENT = '#0b6b78';
+export const ACCENT = '#2E44C4';
 
 /* ------------------------------------------------------------- data caching */
 
@@ -199,9 +199,9 @@ export function ParentShell({
   const fallbackUnread = useUnreadCount();
   const count = unread ?? fallbackUnread;
   return (
-    <div className="flex min-h-dvh flex-col bg-stone-50 text-stone-900 antialiased [-webkit-tap-highlight-color:transparent] dark:bg-stone-950 dark:text-stone-100">
+    <div className="flex min-h-dvh flex-col bg-stone-50 text-stone-900 antialiased [-webkit-tap-highlight-color:transparent] dark:bg-canvas dark:text-stone-100">
       <header
-        className="sticky top-0 z-30 border-b border-stone-200/70 bg-stone-50/90 backdrop-blur-md dark:border-stone-800 dark:bg-stone-950/85"
+        className="sticky top-0 z-30 bg-ink-950 text-white"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="mx-auto flex h-14 w-full max-w-2xl items-center justify-between gap-2 px-4 sm:px-6">
@@ -210,25 +210,25 @@ export function ParentShell({
               <Link
                 href={back}
                 aria-label="Back"
-                className="-ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-stone-600 hover:bg-stone-200/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] dark:text-stone-300 dark:hover:bg-stone-800"
+                className="-ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-text hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marigold-300"
               >
                 <ArrowLeft className="h-5 w-5" aria-hidden />
               </Link>
             )}
             <div className="min-w-0">
-              {subtitle && <p className="truncate text-xs font-medium text-[#0b6b78] dark:text-[#5cc0cc]">{subtitle}</p>}
-              <h1 className="truncate text-base font-semibold leading-tight">{title}</h1>
+              {subtitle && <p className="truncate text-xs font-medium text-ink-muted">{subtitle}</p>}
+              <h1 className="truncate text-base font-semibold leading-tight text-white">{title}</h1>
             </div>
           </div>
           {!hideBell && (
             <Link
               href={withChild('/parent/notifications', childId)}
               aria-label={count > 0 ? `Notifications, ${count} unread` : 'Notifications'}
-              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-stone-200/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] dark:text-stone-300 dark:hover:bg-stone-800"
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-text transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marigold-300"
             >
               <Bell className="h-5 w-5" aria-hidden />
               {count > 0 && (
-                <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#d03b3b] px-1 text-[10px] font-bold text-white ring-2 ring-stone-50 dark:ring-stone-950">
+                <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-marigold-400 px-1 text-[10px] font-bold text-ink-950 ring-2 ring-ink-950">
                   {count > 9 ? '9+' : count}
                 </span>
               )}
@@ -243,7 +243,7 @@ export function ParentShell({
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 backdrop-blur-md dark:border-stone-800 dark:bg-stone-900/95"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 backdrop-blur-md dark:border-line dark:bg-surface/95"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         <ul className="mx-auto grid h-16 max-w-2xl grid-cols-5">
@@ -255,11 +255,11 @@ export function ParentShell({
                   href={withChild(path, childId)}
                   aria-current={isActive ? 'page' : undefined}
                   className={[
-                    'flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0b6b78]',
-                    isActive ? 'text-[#0b6b78] dark:text-[#5cc0cc]' : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200',
+                    'flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600',
+                    isActive ? 'text-indigo-600 dark:text-indigo-300' : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200',
                   ].join(' ')}
                 >
-                  <span className={`flex h-7 w-12 items-center justify-center rounded-full ${isActive ? 'bg-[#e3f1f2] dark:bg-[#0b6b78]/30' : ''}`}>
+                  <span className={`flex h-7 w-12 items-center justify-center rounded-full ${isActive ? 'bg-indigo-50 dark:bg-indigo-600/30' : ''}`}>
                     <TabIcon className="h-5 w-5" aria-hidden />
                   </span>
                   {label}
@@ -279,7 +279,7 @@ export function ParentShell({
 
 export function ChildSwitcher({ items, selectedId, onSelect }: { items: ChildHome[]; selectedId: string; onSelect: (id: string) => void }) {
   return (
-    <div className="border-b border-stone-200/70 px-4 py-3 sm:px-6 dark:border-stone-800">
+    <div className="bg-ink-950 px-4 pb-4 pt-1 sm:px-6">
       <div role="radiogroup" aria-label="Choose child" className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
         {items.map(({ child, attendance, fee }) => {
           const selected = child.id === selectedId;
@@ -292,21 +292,19 @@ export function ChildSwitcher({ items, selectedId, onSelect }: { items: ChildHom
               aria-checked={selected}
               onClick={() => onSelect(child.id)}
               className={[
-                'flex shrink-0 items-center gap-2.5 rounded-full border py-1.5 pl-1.5 pr-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]',
-                selected
-                  ? 'border-[#0b6b78] bg-[#e3f1f2] dark:border-[#5cc0cc] dark:bg-[#0b6b78]/25'
-                  : 'border-stone-200 bg-white hover:border-stone-300 dark:border-stone-700 dark:bg-stone-900',
+                'flex shrink-0 items-center gap-2.5 rounded-full border py-1.5 pl-1.5 pr-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marigold-300',
+                selected ? 'border-marigold-400/70 bg-ink-800 text-white' : 'border-white/10 bg-white/[0.04] text-ink-text hover:bg-white/[0.08]',
               ].join(' ')}
             >
               <span className="relative">
-                <Avatar name={child.name} selected={selected} />
+                <Avatar name={child.name} selected={selected} onInk />
                 {needsAttention && (
-                  <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-[#d03b3b] ring-2 ring-white dark:ring-stone-900" aria-hidden />
+                  <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-red-500 ring-2 ring-ink-950" aria-hidden />
                 )}
               </span>
               <span>
                 <span className="block text-sm font-semibold leading-tight">{child.firstName}</span>
-                <span className="block text-xs text-stone-500 dark:text-stone-400">
+                <span className="block text-xs text-ink-muted">
                   {child.className} {child.sectionName}
                   {needsAttention && <span className="sr-only">, needs attention</span>}
                 </span>
@@ -319,7 +317,7 @@ export function ChildSwitcher({ items, selectedId, onSelect }: { items: ChildHom
   );
 }
 
-export function Avatar({ name, selected }: { name: string; selected?: boolean }) {
+export function Avatar({ name, selected, onInk = false }: { name: string; selected?: boolean; /** On the ink-navy header band. */ onInk?: boolean }) {
   // Siblings share a surname, so use the first two letters of the first name: "Aa", "Ro".
   const initials = (name.split(/\s+/)[0] ?? '').slice(0, 2);
   return (
@@ -327,7 +325,7 @@ export function Avatar({ name, selected }: { name: string; selected?: boolean })
       aria-hidden
       className={[
         'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold',
-        selected ? 'bg-[#0b6b78] text-white dark:bg-[#5cc0cc] dark:text-stone-950' : 'bg-stone-200 text-stone-700 dark:bg-stone-700 dark:text-stone-200',
+        selected ? 'bg-marigold-400 text-ink-950' : onInk ? 'bg-ink-800 text-ink-text' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-400/15 dark:text-indigo-200',
       ].join(' ')}
     >
       {initials}
@@ -392,7 +390,7 @@ export function ParentScreen({
  * ========================================================================== */
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div aria-hidden className={`animate-pulse rounded-2xl bg-stone-200/70 motion-reduce:animate-none dark:bg-stone-800 ${className}`} />;
+  return <div aria-hidden className={`animate-pulse rounded-xl bg-stone-200/70 motion-reduce:animate-none dark:bg-white/[0.06] ${className}`} />;
 }
 
 export function Loading({ label = 'Loading…', rows = 3 }: { label?: string; rows?: number }) {
@@ -408,14 +406,14 @@ export function Loading({ label = 'Loading…', rows = 3 }: { label?: string; ro
 
 export function ErrorBlock({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div role="alert" className="flex flex-col items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-8 text-center text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
+    <div role="alert" className="flex flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-8 text-center text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
       <CircleAlert className="h-6 w-6" aria-hidden />
       <p className="max-w-xs text-sm">{message}</p>
       {onRetry && (
         <button
           type="button"
           onClick={onRetry}
-          className="h-10 rounded-xl border border-red-300 bg-white px-4 text-sm font-semibold text-red-800 hover:bg-red-50 dark:border-red-400/40 dark:bg-transparent dark:text-red-100 dark:hover:bg-red-500/20"
+          className="h-10 rounded-lg border border-red-300 bg-white px-4 text-sm font-semibold text-red-800 hover:bg-red-50 dark:border-red-400/40 dark:bg-transparent dark:text-red-100 dark:hover:bg-red-500/20"
         >
           Try again
         </button>
@@ -426,7 +424,7 @@ export function ErrorBlock({ message, onRetry }: { message: string; onRetry?: ()
 
 export function EmptyBlock({ title, description, icon: EmptyIcon = Inbox }: { title: string; description?: ReactNode; icon?: Icon }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-stone-300 px-5 py-10 text-center dark:border-stone-700">
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-stone-300 px-5 py-10 text-center dark:border-line-strong">
       <EmptyIcon className="h-7 w-7 text-stone-400" aria-hidden />
       <p className="text-[15px] font-semibold">{title}</p>
       {description && <p className="max-w-xs text-sm text-stone-500 dark:text-stone-400">{description}</p>}
@@ -436,7 +434,7 @@ export function EmptyBlock({ title, description, icon: EmptyIcon = Inbox }: { ti
 
 export function PCard({ children, className = '', as: Tag = 'section', ...rest }: { children: ReactNode; className?: string; as?: 'section' | 'div' | 'li'; 'aria-labelledby'?: string; 'aria-label'?: string }) {
   return (
-    <Tag className={`rounded-2xl border border-stone-200 bg-white shadow-[0_1px_2px_rgba(28,25,23,0.04)] dark:border-stone-800 dark:bg-stone-900 ${className}`} {...rest}>
+    <Tag className={`rounded-xl border border-stone-200 bg-white  dark:border-line dark:bg-surface ${className}`} {...rest}>
       {children}
     </Tag>
   );
@@ -457,7 +455,7 @@ export function SectionTitle({ id, icon: TitleIcon, children, action }: { id?: s
 /** iOS-style segmented control (role=tablist). */
 export function Segmented<T extends string>({ value, onChange, items, label }: { value: T; onChange: (v: T) => void; items: { value: T; label: string }[]; label: string }) {
   return (
-    <div role="tablist" aria-label={label} className="grid gap-1 rounded-xl bg-stone-200/70 p-1 dark:bg-stone-800" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+    <div role="tablist" aria-label={label} className="grid gap-1 rounded-lg bg-stone-200/70 p-1 dark:bg-white/[0.06]" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
       {items.map((item) => {
         const selected = item.value === value;
         return (
@@ -468,8 +466,8 @@ export function Segmented<T extends string>({ value, onChange, items, label }: {
             aria-selected={selected}
             onClick={() => onChange(item.value)}
             className={[
-              'h-9 truncate rounded-lg px-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]',
-              selected ? 'bg-white text-stone-900 shadow-sm dark:bg-stone-950 dark:text-stone-50' : 'text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100',
+              'h-9 truncate rounded-lg px-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600',
+              selected ? 'bg-white text-stone-900 shadow-sm dark:bg-canvas dark:text-stone-50' : 'text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100',
             ].join(' ')}
           >
             {item.label}
@@ -481,7 +479,7 @@ export function Segmented<T extends string>({ value, onChange, items, label }: {
 }
 
 export const primaryBtn =
-  'inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0b6b78] px-4 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-[#095a65] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none dark:bg-[#5cc0cc] dark:text-stone-950 dark:hover:bg-[#7dd0da] dark:focus-visible:ring-offset-stone-950 dark:disabled:bg-stone-800 dark:disabled:text-stone-500';
+  'inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none dark:bg-indigo-300 dark:text-stone-950 dark:hover:bg-indigo-200 dark:focus-visible:ring-offset-stone-950 dark:disabled:bg-stone-800 dark:disabled:text-stone-500';
 
 export const secondaryBtn =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-3.5 text-sm font-semibold text-stone-800 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] disabled:opacity-60 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800';
+  'inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 text-sm font-semibold text-stone-800 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 disabled:opacity-60 dark:border-line-strong dark:bg-surface dark:text-stone-100 dark:hover:bg-white/5';

@@ -72,7 +72,7 @@ export async function payFees(opts: {
   const outcome = await new Promise<'success' | 'dismissed' | { failed: string }>((resolve) => {
     const rzp = new window.Razorpay!({
       ...order.checkout,
-      theme: { color: opts.themeColor ?? '#4f46e5' },
+      theme: { color: opts.themeColor ?? '#2E44C4' },
       handler: () => resolve('success'),
       modal: { ondismiss: () => resolve('dismissed'), confirm_close: true },
     });

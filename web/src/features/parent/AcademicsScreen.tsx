@@ -74,7 +74,7 @@ function ReportCards({ home }: { home: ChildHome }) {
   return (
     <>
       {openError && (
-        <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-900 dark:bg-red-500/10 dark:text-red-200">
+        <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-900 dark:bg-red-500/10 dark:text-red-200">
           {openError}
         </p>
       )}
@@ -95,7 +95,7 @@ function ReportCards({ home }: { home: ChildHome }) {
                       fill="none"
                       strokeWidth="3"
                       strokeLinecap="round"
-                      className="stroke-[#0b6b78] dark:stroke-[#5cc0cc]"
+                      className="stroke-indigo-600 dark:stroke-indigo-300"
                       strokeDasharray={`${((pct ?? 0) / 100) * 97.4} 97.4`}
                     />
                   </svg>
@@ -105,7 +105,7 @@ function ReportCards({ home }: { home: ChildHome }) {
                   <p className="text-[15px] font-semibold">{card.is_final ? 'Final report card' : card.term_name ?? 'Report card'}</p>
                   <p className="text-xs text-stone-500 dark:text-stone-400">
                     Session {card.academic_year}
-                    {card.published_at ? ` · Published ${tsDate(card.published_at)}` : ''}
+                    {card.published_at ? `, Published ${tsDate(card.published_at)}` : ''}
                   </p>
                   <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
                     <div className="flex gap-1">
@@ -129,7 +129,7 @@ function ReportCards({ home }: { home: ChildHome }) {
                 type="button"
                 onClick={() => view(card)}
                 disabled={opening !== null}
-                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#0b6b78]/30 bg-[#e3f1f2] text-sm font-semibold text-[#0b6b78] hover:bg-[#d3eaec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] disabled:opacity-60 dark:border-[#5cc0cc]/30 dark:bg-[#0b6b78]/20 dark:text-[#7dd0da] dark:hover:bg-[#0b6b78]/30"
+                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-indigo-600/30 bg-indigo-50 text-sm font-semibold text-indigo-600 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 disabled:opacity-60 dark:border-indigo-300/30 dark:bg-indigo-600/20 dark:text-indigo-200 dark:hover:bg-indigo-600/30"
               >
                 {opening === card.id ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <FileText className="h-4 w-4" aria-hidden />}
                 View report card (PDF)
@@ -175,7 +175,7 @@ function AttendanceCalendar({ home }: { home: ChildHome }) {
             type="button"
             onClick={() => setMonth(shiftMonth(month, -1))}
             aria-label="Previous month"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] dark:text-stone-300 dark:hover:bg-stone-800"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-stone-300 dark:hover:bg-white/5"
           >
             <ChevronLeft className="h-5 w-5" aria-hidden />
           </button>
@@ -187,7 +187,7 @@ function AttendanceCalendar({ home }: { home: ChildHome }) {
             onClick={() => setMonth(shiftMonth(month, 1))}
             disabled={month >= thisMonth}
             aria-label="Next month"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] disabled:opacity-30 dark:text-stone-300 dark:hover:bg-stone-800"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 disabled:opacity-30 dark:text-stone-300 dark:hover:bg-white/5"
           >
             <ChevronRight className="h-5 w-5" aria-hidden />
           </button>
@@ -197,7 +197,7 @@ function AttendanceCalendar({ home }: { home: ChildHome }) {
           <ErrorBlock message={error} onRetry={reload} />
         ) : (
           <div className={loading && !att ? 'opacity-50' : ''}>
-            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase text-stone-400" aria-hidden>
+            <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-stone-400" aria-hidden>
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
                 <span key={d} className="py-1">
                   {d.slice(0, 2)}
@@ -222,7 +222,7 @@ function AttendanceCalendar({ home }: { home: ChildHome }) {
                     className={[
                       'flex aspect-square items-center justify-center rounded-lg text-sm tabular-nums',
                       style ? `${style.cell} font-semibold` : weekday === 0 ? 'text-stone-300 dark:text-stone-600' : 'text-stone-500 dark:text-stone-400',
-                      isToday ? 'ring-2 ring-[#0b6b78] ring-offset-1 ring-offset-white dark:ring-[#5cc0cc] dark:ring-offset-stone-900' : '',
+                      isToday ? 'ring-2 ring-marigold-400 ring-offset-1 ring-offset-white dark:ring-offset-surface' : '',
                     ].join(' ')}
                   >
                     {day}
@@ -273,7 +273,7 @@ function StatsCard({ title, stats, empty }: { title: string; stats: AttendanceSt
         <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">{empty}</p>
       ) : (
         <div className="mt-3 flex items-center gap-4">
-          <p className={`text-3xl font-bold tabular-nums ${low ? 'text-red-700 dark:text-red-300' : 'text-[#0b6b78] dark:text-[#7dd0da]'}`}>
+          <p className={`text-3xl font-bold tabular-nums ${low ? 'text-red-700 dark:text-red-300' : 'text-indigo-600 dark:text-indigo-200'}`}>
             {pct !== null ? `${pct}%` : '–'}
           </p>
           <ul className="grid flex-1 grid-cols-2 gap-x-3 gap-y-1 text-sm">
@@ -329,14 +329,15 @@ function WeekTimetable({ home }: { home: ChildHome }) {
               aria-label={`${FULL_WEEKDAYS[d]}${d === todayIdx ? ', today' : ''}`}
               onClick={() => setDay(d)}
               className={[
-                'flex flex-col items-center rounded-xl py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]',
+                'flex flex-col items-center rounded-lg py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600',
                 selected
-                  ? 'bg-[#0b6b78] text-white dark:bg-[#5cc0cc] dark:text-stone-950'
-                  : 'bg-white text-stone-600 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-stone-900 dark:text-stone-300 dark:ring-stone-800 dark:hover:bg-stone-800',
+                  ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white'
+                  : 'bg-white text-stone-600 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-surface dark:text-stone-300 dark:ring-line dark:hover:bg-white/5',
               ].join(' ')}
             >
               <span className="font-medium">{WEEKDAYS[d]}</span>
-              <span className={`text-base font-semibold tabular-nums ${d === todayIdx && !selected ? 'text-[#0b6b78] dark:text-[#5cc0cc]' : ''}`}>{date.getDate()}</span>
+              <span className={`text-base font-semibold tabular-nums ${d === todayIdx && !selected ? 'text-marigold-700 dark:text-marigold-300' : ''}`}>{date.getDate()}</span>
+              <span aria-hidden className={`mt-1 h-[3px] w-4 rounded-full ${d === todayIdx ? 'bg-marigold-400' : 'bg-transparent'}`} />
             </button>
           );
         })}
@@ -345,32 +346,32 @@ function WeekTimetable({ home }: { home: ChildHome }) {
       {periods.length === 0 ? (
         <EmptyBlock icon={CalendarDays} title={`No classes on ${FULL_WEEKDAYS[day]}`} />
       ) : (
-        <ol className="overflow-hidden rounded-2xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900" aria-label={`${FULL_WEEKDAYS[day]} timetable`}>
+        <ol className="overflow-hidden rounded-xl border border-stone-200 bg-white dark:border-line dark:bg-surface" aria-label={`${FULL_WEEKDAYS[day]} timetable`}>
           {periods.map((p, i) => {
             const state = !isToday ? 'other' : nowMin >= minutesOf(p.end) ? 'past' : nowMin >= minutesOf(p.start) ? 'now' : 'upcoming';
             const isBreak = p.kind !== 'class';
-            const meta = [p.teacher?.name, p.room].filter(Boolean).join(' · ');
+            const meta = [p.teacher?.name, p.room].filter(Boolean).join(', ');
             return (
               <li
                 key={`${p.periodNo}-${p.start}`}
                 aria-current={state === 'now' ? 'time' : undefined}
                 className={[
                   'flex items-center gap-3 px-4',
-                  i ? 'border-t border-stone-100 dark:border-stone-800' : '',
-                  isBreak ? 'bg-stone-50/70 py-2.5 dark:bg-stone-950/40' : 'py-3',
-                  state === 'now' ? 'bg-[#e3f1f2] dark:bg-[#0b6b78]/20' : '',
+                  i ? 'border-t border-stone-100 dark:border-line' : '',
+                  isBreak ? 'bg-stone-50/70 py-2.5 dark:bg-canvas/40' : 'py-3',
+                  state === 'now' ? 'bg-indigo-50 dark:bg-indigo-600/20' : '',
                   state === 'past' ? 'opacity-55' : '',
                 ].join(' ')}
               >
                 <span className="w-[4.5rem] shrink-0 text-xs tabular-nums text-stone-500 dark:text-stone-400">
-                  <span className={`block font-semibold ${state === 'now' ? 'text-[#0b6b78] dark:text-[#7dd0da]' : 'text-stone-700 dark:text-stone-300'}`}>{time12(p.start)}</span>
+                  <span className={`block font-semibold ${state === 'now' ? 'text-indigo-600 dark:text-indigo-200' : 'text-stone-700 dark:text-stone-300'}`}>{time12(p.start)}</span>
                   <span className="block">{time12(p.end)}</span>
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className={`block truncate ${isBreak ? 'text-sm font-medium text-stone-500 dark:text-stone-400' : 'text-[15px] font-semibold'}`}>{p.label}</span>
                   {!isBreak && meta && <span className="block truncate text-xs text-stone-500 dark:text-stone-400">{meta}</span>}
                 </span>
-                {state === 'now' && <span className="shrink-0 rounded-full bg-[#0b6b78] px-2 py-0.5 text-[11px] font-bold text-white dark:bg-[#5cc0cc] dark:text-stone-950">Now</span>}
+                {state === 'now' && <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-[11px] font-bold text-white dark:bg-indigo-500 dark:text-white">Now</span>}
               </li>
             );
           })}

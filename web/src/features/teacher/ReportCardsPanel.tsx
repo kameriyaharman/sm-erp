@@ -110,7 +110,7 @@ export default function ReportCardsPanel({ sections }: { sections: SectionChoice
         </Select>
         {list.length > 0 && (
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {list.length} cards · {published} published
+            {list.length} cards, {published} published
           </p>
         )}
         {cards.data && (list.length === 0 || published < list.length) && (
@@ -259,7 +259,7 @@ function RemarksModal({ card, onClose, onSaved }: { card: SectionReportCard; onC
           onChange={(e) => setText(e.target.value)}
           maxLength={600}
           rows={5}
-          hint={`${text.length}/600 · Printed on the report card.`}
+          hint={`${text.length}/600. Printed on the report card.`}
           placeholder="e.g. Aarav is attentive in class and should practise mental maths daily."
         />
       </div>

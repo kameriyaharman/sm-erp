@@ -83,10 +83,10 @@ export default function HomeworkScreen({ home }: { home: ChildHome }) {
               aria-checked={selected}
               onClick={() => setSubject(s)}
               className={[
-                'h-9 shrink-0 rounded-full px-3.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]',
+                'h-9 shrink-0 rounded-full px-3.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600',
                 selected
-                  ? 'bg-[#0b6b78] text-white dark:bg-[#5cc0cc] dark:text-stone-950'
-                  : 'bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-stone-900 dark:text-stone-300 dark:ring-stone-700 dark:hover:bg-stone-800',
+                  ? 'bg-indigo-600 text-white dark:bg-indigo-300 dark:text-stone-950'
+                  : 'bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-surface dark:text-stone-300 dark:ring-line-strong dark:hover:bg-white/5',
               ].join(' ')}
             >
               {s === 'all' ? 'All subjects' : s}
@@ -103,7 +103,7 @@ export default function HomeworkScreen({ home }: { home: ChildHome }) {
             {g.tone === 'critical' && <CircleAlert className="h-4 w-4 text-red-600 dark:text-red-400" aria-hidden />}
             {g.tone === 'warning' && <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden />}
             <span className={g.tone === 'muted' ? 'text-stone-500 dark:text-stone-400' : ''}>{g.title}</span>
-            <span className="rounded-full bg-stone-200/80 px-2 text-xs font-semibold text-stone-600 dark:bg-stone-800 dark:text-stone-300">{g.items.length}</span>
+            <span className="rounded-full bg-stone-200/80 px-2 text-xs font-semibold text-stone-600 dark:bg-white/[0.06] dark:text-stone-300">{g.items.length}</span>
           </h2>
           <ul className="flex flex-col gap-2.5">
             {g.items.map((item) => {
@@ -113,18 +113,18 @@ export default function HomeworkScreen({ home }: { home: ChildHome }) {
               return (
                 <li
                   key={item.id}
-                  className={`rounded-2xl border bg-white dark:bg-stone-900 ${g.tone === 'critical' ? 'border-red-200 dark:border-red-500/30' : 'border-stone-200 dark:border-stone-800'} ${g.tone === 'muted' ? 'opacity-80' : ''}`}
+                  className={`rounded-xl border bg-white dark:bg-surface ${g.tone === 'critical' ? 'border-red-200 dark:border-red-500/30' : 'border-stone-200 dark:border-line'} ${g.tone === 'muted' ? 'opacity-80' : ''}`}
                 >
                   <button
                     type="button"
                     aria-expanded={open}
                     aria-controls={panelId}
                     onClick={() => setOpenId(open ? null : item.id)}
-                    className="flex w-full items-start gap-3 rounded-2xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]"
+                    className="flex w-full items-start gap-3 rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="rounded-full bg-[#e3f1f2] px-2 py-0.5 text-[11px] font-semibold text-[#0b6b78] dark:bg-[#0b6b78]/25 dark:text-[#7dd0da]">{item.subject?.name ?? 'General'}</span>
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-indigo-600/25 dark:text-indigo-200">{item.subject?.name ?? 'General'}</span>
                         <span className="text-xs text-stone-500 dark:text-stone-400">
                           Due {WEEKDAYS[due.getDay()]} {shortDate(item.dueDate)}
                         </span>
@@ -137,7 +137,7 @@ export default function HomeworkScreen({ home }: { home: ChildHome }) {
                     </span>
                     <ChevronDown className={`mt-1 h-5 w-5 shrink-0 text-stone-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
                   </button>
-                  <div id={panelId} hidden={!open} className="border-t border-stone-100 px-4 pb-4 pt-3 text-sm dark:border-stone-800">
+                  <div id={panelId} hidden={!open} className="border-t border-stone-100 px-4 pb-4 pt-3 text-sm dark:border-line">
                     {item.details ? <p className="whitespace-pre-line leading-relaxed text-stone-700 dark:text-stone-300">{item.details}</p> : <p className="text-stone-500 dark:text-stone-400">No extra instructions from the teacher.</p>}
                   </div>
                 </li>

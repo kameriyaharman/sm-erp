@@ -64,14 +64,14 @@ export default function ExamsList() {
             </thead>
             <tbody>
               {exams.map((e) => (
-                <tr key={e.id} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40" onClick={() => router.push(`/exams/${e.id}`)}>
+                <tr key={e.id} className="cursor-pointer hover:bg-slate-50/70 dark:hover:bg-white/[0.025]" onClick={() => router.push(`/exams/${e.id}`)}>
                   <Td>
                     <Link href={`/exams/${e.id}`} onClick={(ev) => ev.stopPropagation()} className="whitespace-nowrap font-medium hover:text-indigo-700 hover:underline dark:hover:text-indigo-300">
                       {e.name}
                     </Link>
                     <p className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
                       {titleCase(e.examType)}
-                      {e.componentCode ? ` · ${COMPONENT_LABEL[e.componentCode] ?? e.componentCode}` : ''}
+                      {e.componentCode ? `, ${COMPONENT_LABEL[e.componentCode] ?? e.componentCode}` : ''}
                     </p>
                   </Td>
                   <Td className="whitespace-nowrap">{e.term?.name ?? '-'}</Td>
@@ -185,7 +185,7 @@ function NewExamModal({ open, onClose, onCreated }: { open: boolean; onClose: ()
           <option value="">None</option>
           {COMPONENT_CODES.map((c) => (
             <option key={c} value={c}>
-              {c} · {COMPONENT_LABEL[c]}
+              {c}, {COMPONENT_LABEL[c]}
             </option>
           ))}
         </Select>

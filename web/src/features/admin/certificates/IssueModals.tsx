@@ -75,7 +75,7 @@ export function BonafideModal({ student, open, onClose, onIssued }: { student: C
     <Modal
       open={open}
       onClose={busy ? () => undefined : onClose}
-      title={`Bonafide certificate${student ? ` · ${student.name}` : ''}`}
+      title={`Bonafide certificate${student ? ` for ${student.name}` : ''}`}
       size="sm"
       footer={
         issued ? undefined : (
@@ -185,7 +185,7 @@ export function TcModal({ student, open, onClose, onIssued }: { student: CertStu
     <Modal
       open={open}
       onClose={busy ? () => undefined : onClose}
-      title={`Transfer certificate${student ? ` · ${student.name}` : ''}`}
+      title={`Transfer certificate${student ? ` for ${student.name}` : ''}`}
       size="lg"
       footer={
         issued ? undefined : (

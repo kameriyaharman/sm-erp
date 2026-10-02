@@ -24,7 +24,7 @@ export default function BusScreen({ home, schoolPhone }: { home: ChildHome; scho
               <>
                 {' '}
                 on{' '}
-                <a href={telHref(schoolPhone)} className="font-semibold text-[#0b6b78] underline underline-offset-2 dark:text-[#7dd0da]">
+                <a href={telHref(schoolPhone)} className="font-semibold text-indigo-600 underline underline-offset-2 dark:text-indigo-200">
                   {schoolPhone}
                 </a>
               </>
@@ -40,8 +40,8 @@ export default function BusScreen({ home, schoolPhone }: { home: ChildHome; scho
   return (
     <>
       <PCard className="overflow-hidden" aria-label="Route">
-        <div className="flex items-center gap-3 bg-[#0b6b78] px-4 py-4 text-white dark:bg-[#0b6b78]/60">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15" aria-hidden>
+        <div className="flex items-center gap-3 bg-indigo-600 px-4 py-4 text-white dark:bg-indigo-600/60">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/15" aria-hidden>
             <Bus className="h-6 w-6" />
           </span>
           <div className="min-w-0">
@@ -50,18 +50,18 @@ export default function BusScreen({ home, schoolPhone }: { home: ChildHome; scho
           </div>
         </div>
 
-        <div className="grid grid-cols-2 divide-x divide-stone-100 border-b border-stone-100 dark:divide-stone-800 dark:border-stone-800">
+        <div className="grid grid-cols-2 divide-x divide-stone-100 border-b border-stone-100 dark:divide-line dark:border-line">
           <div className="px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Morning pickup</p>
+            <p className="text-xs font-medium text-stone-500 dark:text-stone-400">Morning pickup</p>
             <p className="mt-0.5 text-xl font-bold tabular-nums">{time12(stop.pickupTime) || '–'}</p>
           </div>
           <div className="px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Afternoon drop</p>
+            <p className="text-xs font-medium text-stone-500 dark:text-stone-400">Afternoon drop</p>
             <p className="mt-0.5 text-xl font-bold tabular-nums">{time12(stop.dropTime) || '–'}</p>
           </div>
         </div>
         <p className="flex items-center gap-2 px-4 py-3 text-sm">
-          <MapPin className="h-4 w-4 shrink-0 text-[#0b6b78] dark:text-[#7dd0da]" aria-hidden />
+          <MapPin className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-200" aria-hidden />
           <span>
             <span className="text-stone-500 dark:text-stone-400">Stop: </span>
             <span className="font-semibold">{stop.name}</span>
@@ -69,21 +69,21 @@ export default function BusScreen({ home, schoolPhone }: { home: ChildHome; scho
         </p>
 
         {(route.driverName || route.attendantName) && (
-          <ul className="border-t border-stone-100 dark:border-stone-800">
+          <ul className="border-t border-stone-100 dark:border-line">
             {route.driverName && (
               <li className="flex items-center gap-3 px-4 py-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300" aria-hidden>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 dark:bg-white/[0.06] dark:text-stone-300" aria-hidden>
                   <UserRound className="h-[18px] w-[18px]" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-semibold">{route.driverName}</span>
-                  <span className="block text-xs text-stone-500 dark:text-stone-400">Driver{route.driverPhone ? ` · ${displayPhone(route.driverPhone)}` : ''}</span>
+                  <span className="block text-xs text-stone-500 dark:text-stone-400">Driver{route.driverPhone ? `, ${displayPhone(route.driverPhone)}` : ''}</span>
                 </span>
                 {route.driverPhone && (
                   <a
                     href={telHref(route.driverPhone)}
                     aria-label={`Call driver ${route.driverName}`}
-                    className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900"
+                    className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900"
                   >
                     <Phone className="h-4 w-4" aria-hidden />
                     Call
@@ -92,8 +92,8 @@ export default function BusScreen({ home, schoolPhone }: { home: ChildHome; scho
               </li>
             )}
             {route.attendantName && (
-              <li className="flex items-center gap-3 border-t border-stone-100 px-4 py-3 dark:border-stone-800">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300" aria-hidden>
+              <li className="flex items-center gap-3 border-t border-stone-100 px-4 py-3 dark:border-line">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 dark:bg-white/[0.06] dark:text-stone-300" aria-hidden>
                   <UserRound className="h-[18px] w-[18px]" />
                 </span>
                 <span>
@@ -117,17 +117,17 @@ export default function BusScreen({ home, schoolPhone }: { home: ChildHome; scho
               return (
                 <li key={`${s.name}-${i}`} aria-current={s.isMine ? 'location' : undefined} className="relative flex gap-3">
                   <span className="relative flex w-5 shrink-0 justify-center" aria-hidden>
-                    <span className={`absolute top-0 w-0.5 bg-stone-200 dark:bg-stone-700 ${i === 0 ? 'top-1/2' : ''} ${last ? 'h-1/2' : 'bottom-0'}`} />
+                    <span className={`absolute top-0 w-0.5 bg-stone-200 dark:bg-white/10 ${i === 0 ? 'top-1/2' : ''} ${last ? 'h-1/2' : 'bottom-0'}`} />
                     <span
                       className={[
                         'relative z-10 mt-[1.1rem] rounded-full',
-                        s.isMine ? 'h-4 w-4 bg-[#0b6b78] ring-4 ring-[#e3f1f2] dark:bg-[#5cc0cc] dark:ring-[#0b6b78]/30' : 'h-2.5 w-2.5 bg-stone-300 dark:bg-stone-600',
+                        s.isMine ? 'h-4 w-4 bg-indigo-600 ring-4 ring-indigo-50 dark:bg-indigo-300 dark:ring-indigo-600/30' : 'h-2.5 w-2.5 bg-stone-300 dark:bg-stone-600',
                       ].join(' ')}
                     />
                   </span>
                   <div className={`flex min-w-0 flex-1 items-center justify-between gap-3 py-3 ${s.isMine ? '' : ''}`}>
                     <div className="min-w-0">
-                      <p className={`truncate ${s.isMine ? 'text-[15px] font-semibold text-[#0b6b78] dark:text-[#7dd0da]' : 'text-sm text-stone-700 dark:text-stone-300'}`}>{s.name}</p>
+                      <p className={`truncate ${s.isMine ? 'text-[15px] font-semibold text-indigo-600 dark:text-indigo-200' : 'text-sm text-stone-700 dark:text-stone-300'}`}>{s.name}</p>
                       {s.isMine && <p className="text-xs font-medium text-stone-500 dark:text-stone-400">{home.child.firstName}&apos;s stop</p>}
                     </div>
                     <div className="shrink-0 text-right text-xs tabular-nums text-stone-500 dark:text-stone-400">

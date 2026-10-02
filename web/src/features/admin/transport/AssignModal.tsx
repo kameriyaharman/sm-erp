@@ -70,7 +70,7 @@ export default function AssignModal({
     <Modal
       open={open}
       onClose={busy ? () => undefined : onClose}
-      title={`School bus${student ? ` · ${student.name}` : ''}`}
+      title={`School bus for ${student ? student.name : 'student'}`}
       size="sm"
       footer={
         <>
@@ -103,7 +103,7 @@ export default function AssignModal({
             <option value="">Choose a route…</option>
             {list.map((r) => (
               <option key={r.id} value={r.id} disabled={r.status !== 'active'}>
-                {r.name} · {r.studentCount}
+                {r.name}, {r.studentCount}
                 {r.capacity ? `/${r.capacity}` : ''} riders{r.status !== 'active' ? ' (inactive)' : ''}
               </option>
             ))}
@@ -113,7 +113,7 @@ export default function AssignModal({
             {route?.stops.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.sequenceNo}. {s.name}
-                {s.pickupTime ? ` · pickup ${formatTime(s.pickupTime)}` : ''}
+                {s.pickupTime ? `, pickup ${formatTime(s.pickupTime)}` : ''}
               </option>
             ))}
           </Select>

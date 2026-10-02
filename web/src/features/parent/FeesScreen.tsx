@@ -66,10 +66,10 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
         <p
           role={flash.tone === 'error' ? 'alert' : 'status'}
           className={[
-            'rounded-xl px-4 py-3 text-sm',
+            'rounded-lg px-4 py-3 text-sm',
             flash.tone === 'success' && 'bg-emerald-50 text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200',
             flash.tone === 'error' && 'bg-red-50 text-red-900 dark:bg-red-500/10 dark:text-red-200',
-            flash.tone === 'info' && 'bg-[#e3f1f2] text-[#0a4d56] dark:bg-[#0b6b78]/25 dark:text-[#bfe6eb]',
+            flash.tone === 'info' && 'bg-indigo-50 text-indigo-800 dark:bg-indigo-600/25 dark:text-indigo-200',
           ]
             .filter(Boolean)
             .join(' ')}
@@ -94,7 +94,7 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
           Bills to pay
         </SectionTitle>
         {open.length === 0 ? (
-          <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
             <CircleCheck className="h-5 w-5 shrink-0" aria-hidden />
             <p>
               No bills due right now.
@@ -130,21 +130,21 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
           <PCard as="div">
             <ul>
               {fees.receipts.map((r, i) => (
-                <li key={r.id} className={`flex items-center gap-3 px-4 py-3 ${i ? 'border-t border-stone-100 dark:border-stone-800' : ''}`}>
+                <li key={r.id} className={`flex items-center gap-3 px-4 py-3 ${i ? 'border-t border-stone-100 dark:border-line' : ''}`}>
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" aria-hidden>
                     <CircleCheck className="h-[18px] w-[18px]" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15px] font-semibold tabular-nums">{inr(r.amount)}</span>
                     <span className="block truncate text-xs text-stone-500 dark:text-stone-400">
-                      {tsDate(r.receivedAt)} · {PAYMENT_MODE[r.paymentMode] ?? r.paymentMode} · {r.receiptNumber}
+                      {tsDate(r.receivedAt)}, {PAYMENT_MODE[r.paymentMode] ?? r.paymentMode}, {r.receiptNumber}
                     </span>
                   </span>
                   <button
                     type="button"
                     onClick={() => downloadReceipt(r.id, r.receiptNumber)}
                     aria-label={`Download receipt ${r.receiptNumber}`}
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-[#0b6b78] hover:bg-[#e3f1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] dark:text-[#7dd0da] dark:hover:bg-[#0b6b78]/20"
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-indigo-200 dark:hover:bg-indigo-600/20"
                   >
                     <Download className="h-4 w-4" aria-hidden />
                     Receipt
@@ -158,10 +158,10 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
 
       {paidBills.length > 0 && (
         <details className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-1 py-2 text-sm font-semibold text-stone-600 marker:hidden dark:text-stone-300">
+          <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-1 py-2 text-sm font-semibold text-stone-600 marker:hidden dark:text-stone-300">
             Paid bills ({paidBills.length})
-            <span className="text-[#0b6b78] group-open:hidden dark:text-[#7dd0da]">Show</span>
-            <span className="hidden text-[#0b6b78] group-open:inline dark:text-[#7dd0da]">Hide</span>
+            <span className="text-indigo-600 group-open:hidden dark:text-indigo-200">Show</span>
+            <span className="hidden text-indigo-600 group-open:inline dark:text-indigo-200">Hide</span>
           </summary>
           <ul className="mt-2 flex flex-col gap-3">
             {paidBills.map((inv) => (
@@ -185,25 +185,25 @@ function Totals({ fees, firstName }: { fees: ChildFees; firstName: string }) {
         <span className="text-3xl font-bold tabular-nums tracking-tight">{inr(pending)}</span>
         <span className="text-sm text-stone-500 dark:text-stone-400">pending</span>
       </p>
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-stone-100 dark:bg-stone-800" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Share of the year's fees paid">
-        <div className="h-full rounded-full bg-[#0b6b78] dark:bg-[#5cc0cc]" style={{ width: `${pct}%` }} />
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-stone-100 dark:bg-white/[0.06]" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Share of the year's fees paid">
+        <div className="h-full rounded-full bg-indigo-600 dark:bg-indigo-300" style={{ width: `${pct}%` }} />
       </div>
       <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-xl bg-stone-50 px-2 py-2.5 dark:bg-stone-950/60">
-          <dt className="text-[11px] font-medium uppercase tracking-wide text-stone-500 dark:text-stone-400">Paid</dt>
+        <div className="rounded-lg bg-stone-50 px-2 py-2.5 dark:bg-canvas/60">
+          <dt className="text-xs font-medium text-stone-500 dark:text-stone-400">Paid</dt>
           <dd className="mt-0.5 text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">{inr(paid)}</dd>
         </div>
-        <div className={`rounded-xl px-2 py-2.5 ${hasOverdue ? 'bg-red-50 dark:bg-red-500/10' : 'bg-stone-50 dark:bg-stone-950/60'}`}>
-          <dt className="text-[11px] font-medium uppercase tracking-wide text-stone-500 dark:text-stone-400">Overdue</dt>
+        <div className={`rounded-lg px-2 py-2.5 ${hasOverdue ? 'bg-red-50 dark:bg-red-500/10' : 'bg-stone-50 dark:bg-canvas/60'}`}>
+          <dt className="text-xs font-medium text-stone-500 dark:text-stone-400">Overdue</dt>
           <dd className={`mt-0.5 text-sm font-semibold tabular-nums ${hasOverdue ? 'text-red-700 dark:text-red-300' : ''}`}>{inr(overdue)}</dd>
         </div>
-        <div className="rounded-xl bg-stone-50 px-2 py-2.5 dark:bg-stone-950/60">
-          <dt className="text-[11px] font-medium uppercase tracking-wide text-stone-500 dark:text-stone-400">Year total</dt>
+        <div className="rounded-lg bg-stone-50 px-2 py-2.5 dark:bg-canvas/60">
+          <dt className="text-xs font-medium text-stone-500 dark:text-stone-400">Year total</dt>
           <dd className="mt-0.5 text-sm font-semibold tabular-nums">{inr(totalFee)}</dd>
         </div>
       </dl>
       {!fees.onlinePayment.enabled && Number(pending) > 0 && (
-        <p className="mt-4 flex gap-2 rounded-xl bg-stone-100 px-3 py-2.5 text-xs leading-relaxed text-stone-600 dark:bg-stone-800/70 dark:text-stone-300">
+        <p className="mt-4 flex gap-2 rounded-lg bg-stone-100 px-3 py-2.5 text-xs leading-relaxed text-stone-600 dark:bg-white/[0.06] dark:text-stone-300">
           <Info className="mt-px h-4 w-4 shrink-0" aria-hidden />
           Online payment is not enabled by the school yet — pay at the school office. Your receipt will show up here.
         </p>
@@ -215,7 +215,7 @@ function Totals({ fees, firstName }: { fees: ChildFees; firstName: string }) {
 function InvoiceCard({ invoice: inv, children }: { invoice: FeeInvoice; children?: ReactNode }) {
   const paid = inv.status === 'paid';
   const d = daysUntil(inv.dueDate);
-  const dueText = paid ? `Paid · due was ${shortDate(inv.dueDate)}` : inv.overdue ? `Overdue since ${shortDate(inv.dueDate)}` : d === 0 ? 'Due today' : `Due ${shortDate(inv.dueDate)}`;
+  const dueText = paid ? `Paid, due was ${shortDate(inv.dueDate)}` : inv.overdue ? `Overdue since ${shortDate(inv.dueDate)}` : d === 0 ? 'Due today' : `Due ${shortDate(inv.dueDate)}`;
   return (
     <PCard as="li" className={`p-4 ${inv.overdue ? 'border-red-300 ring-1 ring-red-200 dark:border-red-500/50 dark:ring-red-500/20' : ''}`}>
       <div className="flex items-start justify-between gap-3">
@@ -245,7 +245,7 @@ function InvoiceCard({ invoice: inv, children }: { invoice: FeeInvoice; children
           </li>
         ))}
       </ul>
-      <div className="mt-3 flex justify-between gap-3 border-t border-dashed border-stone-200 pt-3 text-sm dark:border-stone-700">
+      <div className="mt-3 flex justify-between gap-3 border-t border-dashed border-stone-200 pt-3 text-sm dark:border-line-strong">
         <span className="text-stone-500 dark:text-stone-400">{paid ? 'Total paid' : Number(inv.paidAmount) > 0 ? `Balance (of ${inr(inv.netAmount)})` : 'Amount due'}</span>
         <span className="font-semibold tabular-nums">{inr(paid ? inv.netAmount : inv.balanceAmount)}</span>
       </div>
@@ -270,9 +270,9 @@ function Upcoming({ items }: { items: UpcomingInstallment[] }) {
           const d = daysUntil(date);
           return (
             <PCard as="li" key={date} className="flex items-center gap-3 p-4">
-              <span className="flex w-12 shrink-0 flex-col items-center rounded-xl bg-[#e3f1f2] py-1.5 text-[#0b6b78] dark:bg-[#0b6b78]/25 dark:text-[#7dd0da]" aria-hidden>
+              <span className="flex w-12 shrink-0 flex-col items-center rounded-lg bg-indigo-50 py-1.5 text-indigo-600 dark:bg-indigo-600/25 dark:text-indigo-200" aria-hidden>
                 <span className="text-lg font-bold leading-none tabular-nums">{date.slice(8, 10).replace(/^0/, '')}</span>
-                <span className="text-[11px] font-semibold uppercase">{shortDate(date).split(' ')[1]}</span>
+                <span className="text-[11px] font-semibold">{shortDate(date).split(' ')[1]}</span>
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-semibold tabular-nums">{inr(total)}</span>

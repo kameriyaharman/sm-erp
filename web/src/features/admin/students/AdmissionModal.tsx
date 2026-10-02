@@ -152,7 +152,7 @@ export default function AdmissionModal({
     >
       <form id="admission-form" onSubmit={submit} noValidate className="space-y-6">
         <fieldset className="space-y-4">
-          <legend className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Student</legend>
+          <legend className="mb-3 text-13 font-medium text-slate-500 dark:text-slate-400">Student</legend>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="First name" value={form.firstName} onChange={set('firstName')} error={errors.firstName} autoComplete="off" required />
             <Input label="Last name" value={form.lastName} onChange={set('lastName')} error={errors.lastName} autoComplete="off" />
@@ -175,7 +175,7 @@ export default function AdmissionModal({
         </fieldset>
 
         <fieldset className="space-y-4">
-          <legend className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Admission</legend>
+          <legend className="mb-3 text-13 font-medium text-slate-500 dark:text-slate-400">Admission</legend>
           <div className="grid gap-4 sm:grid-cols-2">
             <Select label="Class" value={form.classId} onChange={(e) => setForm((f) => ({ ...f, classId: e.target.value, sectionId: '' }))} error={errors.classId} required>
               <option value="">Choose…</option>
@@ -208,7 +208,7 @@ export default function AdmissionModal({
         </fieldset>
 
         <fieldset className="space-y-4">
-          <legend className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Parent / guardian</legend>
+          <legend className="mb-3 text-13 font-medium text-slate-500 dark:text-slate-400">Parent / guardian</legend>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Parent name" value={form.parentName} onChange={set('parentName')} error={errors.parentName} required />
             <Input label="Mobile number" type="tel" inputMode="tel" value={form.parentPhone} onChange={set('parentPhone')} error={errors.parentPhone} placeholder="98XXXXXXXX" hint="An existing parent with this number is linked." required />

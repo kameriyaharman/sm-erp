@@ -162,7 +162,7 @@ export default function DefaultersPage() {
                 {data.data.map((d) => {
                   const sev = severity(d.daysOverdue);
                   return (
-                    <tr key={d.studentId} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40" onClick={() => router.push(`/students/${d.studentId}`)}>
+                    <tr key={d.studentId} className="cursor-pointer hover:bg-slate-50/70 dark:hover:bg-white/[0.025]" onClick={() => router.push(`/students/${d.studentId}`)}>
                       <Td>
                         <Link href={`/students/${d.studentId}`} onClick={(e) => e.stopPropagation()} className="whitespace-nowrap font-medium hover:text-indigo-700 hover:underline dark:hover:text-indigo-300">
                           {d.studentName}

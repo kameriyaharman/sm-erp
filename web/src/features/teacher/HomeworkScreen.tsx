@@ -137,7 +137,7 @@ export default function HomeworkScreen() {
                         </span>
                         {h.details && <span className="mt-1 line-clamp-2 block text-xs text-slate-500 dark:text-slate-400">{h.details}</span>}
                         <span className="mt-1 block text-xs text-slate-400 md:hidden">
-                          {h.section.label} · {h.teacher.name ?? '–'}
+                          {h.section.label}, {h.teacher.name ?? '–'}
                         </span>
                       </Td>
                       <Td className="hidden whitespace-nowrap md:table-cell">{h.section.label}</Td>

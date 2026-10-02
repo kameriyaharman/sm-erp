@@ -170,7 +170,7 @@ export default function ExpensesPage() {
                       <Td className="whitespace-nowrap">{formatDate(x.expenseDate)}</Td>
                       <Td>
                         <p className="min-w-[12rem] font-medium">{x.description}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{[x.vendor, x.reference].filter(Boolean).join(' · ') || `Added by ${x.createdBy?.name ?? 'staff'}`}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{[x.vendor, x.reference].filter(Boolean).join(', ') || `Added by ${x.createdBy?.name ?? 'staff'}`}</p>
                       </Td>
                       <Td>
                         <Badge>

@@ -89,7 +89,7 @@ export default function NoticesPage() {
         <ul className="space-y-3">
           {list.map((n) => (
             <li key={n.id}>
-              <article className={`rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 sm:p-5 ${n.pinned ? 'border-indigo-200 dark:border-indigo-500/40' : 'border-slate-200 dark:border-slate-800'}`}>
+              <article className={`rounded-xl border bg-surface p-4 sm:p-5 ${n.pinned ? 'border-indigo-200 dark:border-indigo-500/40' : 'border-line'}`}>
                 <header className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="mb-1 flex flex-wrap items-center gap-1.5">
@@ -104,7 +104,7 @@ export default function NoticesPage() {
                     <h2 className="text-base font-semibold">{n.title}</h2>
                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                       {formatDateTime(n.createdAt)}
-                      {n.createdBy?.name ? ` · ${n.createdBy.name}` : ''}
+                      {n.createdBy?.name ? `, ${n.createdBy.name}` : ''}
                     </p>
                   </div>
                   {admin && (

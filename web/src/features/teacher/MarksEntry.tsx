@@ -194,8 +194,8 @@ export default function MarksEntry({
             All papers
           </Button>
         }
-        title={`${paper.subject.name} · ${paper.exam.name}`}
-        description={`${paper.class.name}${paper.examDate ? ` · ${formatDate(paper.examDate)}` : ''} · Maximum ${max}${pass !== null ? `, pass ${pass}` : ''}`}
+        title={`${paper.subject.name}, ${paper.exam.name}`}
+        description={`${paper.class.name}${paper.examDate ? `, ${formatDate(paper.examDate)}` : ''}, Maximum ${max}${pass !== null ? `, pass ${pass}` : ''}`}
         actions={
           sections.length > 1 ? (
             <Select
@@ -328,7 +328,7 @@ export default function MarksEntry({
           </Card>
 
           {!locked && (
-            <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:mx-0 sm:rounded-xl sm:border">
+            <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-end gap-3 border-t border-line bg-white/95 px-4 py-3 backdrop-blur dark:bg-slate-900/95 sm:mx-0 sm:rounded-xl sm:border">
               <p className="mr-auto text-sm text-slate-500 dark:text-slate-400" aria-live="polite">
                 {invalid ? <span className="text-red-600 dark:text-red-400">Fix the highlighted marks to save.</span> : dirty ? `${changed.length} unsaved change${changed.length === 1 ? '' : 's'}` : 'All changes saved'}
                 <span className="ml-2 hidden text-xs text-slate-400 md:inline">Enter / ↓ moves to the next student</span>

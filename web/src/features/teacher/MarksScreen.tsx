@@ -135,7 +135,7 @@ export default function MarksScreen() {
                 }
                 actions={<Progress value={entered} max={expected} />}
               >
-                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                <ul className="divide-y divide-line">
                   {list.map((p) => {
                     const done = p.students > 0 && p.entered >= p.students;
                     return (
@@ -145,7 +145,7 @@ export default function MarksScreen() {
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {p.class.name}
                             {p.section ? ` ${p.section.name}` : ', all sections'}
-                            {p.examDate ? ` · ${formatDate(p.examDate)}` : ''} · Max {p.maxMarks}
+                            {p.examDate ? `, ${formatDate(p.examDate)}` : ''}, Max {p.maxMarks}
                             {p.passMarks !== null ? `, pass ${p.passMarks}` : ''}
                           </p>
                         </div>

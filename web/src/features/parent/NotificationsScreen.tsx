@@ -44,19 +44,19 @@ export default function NotificationsScreen() {
       {sorted.map((n) => {
         const unread = n.createdAt > seenBefore;
         return (
-          <PCard as="li" key={n.id} className={`p-4 ${n.pinned ? 'border-[#0b6b78]/40 bg-[#f4fafa] dark:border-[#5cc0cc]/30 dark:bg-[#0b6b78]/10' : ''}`}>
+          <PCard as="li" key={n.id} className={`p-4 ${n.pinned ? 'border-indigo-600/40 bg-indigo-50 dark:border-indigo-300/30 dark:bg-indigo-600/10' : ''}`}>
             <div className="flex items-start gap-2">
-              {unread && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#d03b3b]" aria-label="New" />}
+              {unread && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-600" aria-label="New" />}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {n.pinned && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#0b6b78] px-2 py-0.5 text-[11px] font-bold text-white dark:bg-[#5cc0cc] dark:text-stone-950">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[11px] font-bold text-white dark:bg-indigo-300 dark:text-stone-950">
                       <Pin className="h-3 w-3" aria-hidden />
                       Pinned
                     </span>
                   )}
                   {n.class && (
-                    <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-stone-600 dark:bg-stone-800 dark:text-stone-300">{n.class.name}</span>
+                    <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-stone-600 dark:bg-white/[0.06] dark:text-stone-300">{n.class.name}</span>
                   )}
                 </div>
                 <h2 className="mt-1 text-[15px] font-semibold leading-snug">{n.title}</h2>
@@ -65,7 +65,7 @@ export default function NotificationsScreen() {
                   <time dateTime={n.createdAt} title={tsDate(n.createdAt)}>
                     {relativeAgo(n.createdAt)}
                   </time>
-                  {n.createdBy?.name ? ` · ${n.createdBy.name}` : ''}
+                  {n.createdBy?.name ? `, ${n.createdBy.name}` : ''}
                 </p>
               </div>
             </div>

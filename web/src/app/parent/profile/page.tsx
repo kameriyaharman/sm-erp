@@ -43,13 +43,13 @@ export default function ProfilePage() {
             return (
               <>
                 <PCard className="flex items-center gap-4 p-5" aria-label="Your account">
-                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#0b6b78] text-xl font-bold text-white dark:bg-[#5cc0cc] dark:text-stone-950" aria-hidden>
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-ink-950 text-xl font-bold text-white dark:bg-indigo-500" aria-hidden>
                     {name.slice(0, 1)}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate text-lg font-semibold">{name}</p>
                     <p className="truncate text-sm text-stone-500 dark:text-stone-400">{user?.email ?? user?.username}</p>
-                    <p className="truncate text-xs text-stone-500 dark:text-stone-400">Parent · {data.schoolName}</p>
+                    <p className="truncate text-xs text-stone-500 dark:text-stone-400">Parent, {data.schoolName}</p>
                   </div>
                 </PCard>
 
@@ -59,17 +59,17 @@ export default function ProfilePage() {
                     {data.children.map(({ child }) => (
                       <PCard as="li" key={child.id} className="p-4">
                         <div className="flex items-center gap-3">
-                          <Avatar name={child.name} selected />
+                          <Avatar name={child.name} />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[15px] font-semibold">{child.name}</p>
                             <p className="text-xs text-stone-500 dark:text-stone-400">
                               {child.className} {child.sectionName}
-                              {child.rollNumber ? ` · Roll no. ${child.rollNumber}` : ''}
+                              {child.rollNumber ? `, Roll no. ${child.rollNumber}` : ''}
                             </p>
                           </div>
                         </div>
                         {child.classTeacher && (
-                          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2.5 text-sm dark:bg-stone-950/60">
+                          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-stone-50 px-3 py-2.5 text-sm dark:bg-canvas/60">
                             <span className="min-w-0">
                               <span className="block text-xs text-stone-500 dark:text-stone-400">Class teacher</span>
                               <span className="block truncate font-semibold">{child.classTeacher.name}</span>
@@ -78,7 +78,7 @@ export default function ProfilePage() {
                               <a
                                 href={telHref(child.classTeacher.phone)}
                                 aria-label={`Call ${child.classTeacher.name}, ${displayPhone(child.classTeacher.phone)}`}
-                                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-[#0b6b78] ring-1 ring-inset ring-[#0b6b78]/30 hover:bg-[#e3f1f2] dark:text-[#7dd0da] dark:ring-[#5cc0cc]/30 dark:hover:bg-[#0b6b78]/20"
+                                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-indigo-600 ring-1 ring-inset ring-indigo-600/30 hover:bg-indigo-50 dark:text-indigo-200 dark:ring-indigo-300/30 dark:hover:bg-indigo-600/20"
                               >
                                 <Phone className="h-4 w-4" aria-hidden /> Call
                               </a>

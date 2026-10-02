@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Search, UserPlus } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Td, Th } from '@/components/ui';
+import { Badge, Button, Card, controlClass, cx, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Td, Th } from '@/components/ui';
 import { useApi } from '@/lib/useApi';
 import { apiSend, currentUser } from '@/lib/session';
 import { formatDate } from '@/lib/format';
@@ -80,7 +80,7 @@ export default function StaffPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Name, email, designation"
-              className="block h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-950"
+              className={cx(controlClass, 'h-10 pl-9 sm:h-9')}
             />
           </label>
           <Select label="Role" value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
