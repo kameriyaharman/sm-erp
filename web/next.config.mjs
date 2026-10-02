@@ -21,6 +21,8 @@ const securityHeaders = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Lets several local dev servers run side by side (each with its own build folder).
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   poweredByHeader: false,
   reactStrictMode: true,
   images: { unoptimized: true },
