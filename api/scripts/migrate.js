@@ -80,6 +80,7 @@ async function main() {
   try {
     await client.query(`SET lock_timeout = '15s'`);
     await client.query('SELECT pg_advisory_lock($1)', [LOCK_KEY]);
+    if (process.env.MIGRATE_ADOPT_EMPTY_LEGACY === 'true' && !statusOnly) await resetEmptyLegacySchema(client);
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version      varchar(100) PRIMARY KEY,
@@ -124,6 +125,26 @@ async function main() {
     await client.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]).catch(() => {});
     await client.end();
   }
+}
+
+/**
+ * One-off escape hatch for a database whose tables were created outside this runner
+ * (no schema_migrations table). With MIGRATE_ADOPT_EMPTY_LEGACY=true, and ONLY if every
+ * table in `public` is empty, the schema is dropped and rebuilt by the migrations.
+ * Any row anywhere stops the run instead. Remove the variable after the first deploy.
+ */
+async function resetEmptyLegacySchema(client) {
+  // "Tracked" = the runner has recorded at least one migration here (an empty table left by a failed run doesn't count).
+  const exists = (await client.query(`SELECT to_regclass('public.schema_migrations') IS NOT NULL AS t`)).rows[0].t;
+  if (exists && (await client.query('SELECT 1 FROM schema_migrations LIMIT 1')).rowCount > 0) return;
+  const tables = (await client.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_migrations'`)).rows.map((r) => r.tablename);
+  if (tables.length === 0) return;
+  for (const table of tables) {
+    const { rows } = await client.query(`SELECT EXISTS (SELECT 1 FROM public."${table.replace(/"/g, '""')}") AS has_rows`);
+    if (rows[0].has_rows) throw new Error(`Legacy table ${table} has data; refusing to reset. Migrate it by hand.`);
+  }
+  log('warn', 'Resetting empty legacy schema created outside the migration runner', { tables });
+  await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;');
 }
 
 main().catch((err) => {
