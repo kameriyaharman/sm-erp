@@ -27,10 +27,18 @@ import {
   X,
 } from 'lucide-react';
 import { apiGet, logout, ROLE_LABEL, type Role, type SessionUser } from '@/lib/session';
+import { useTeacherScope } from '@/lib/access';
 import GlobalSearch from './GlobalSearch';
 import UserMenu from './UserMenu';
 
-type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; roles: Role[] };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  roles: Role[];
+  /** Teachers only see it when they are a class teacher (admins always). */
+  classTeacherOnly?: boolean;
+};
 type NavGroup = { label: string | null; items: NavItem[] };
 
 const ADMINS: Role[] = ['super_admin', 'branch_admin'];
@@ -47,13 +55,13 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/students', label: 'Students', icon: Users, roles: ADMINS },
       { href: '/staff', label: 'Staff', icon: UserCog, roles: ADMINS },
-      { href: '/teacher/class', label: 'My class', icon: Users, roles: ['teacher'] },
+      { href: '/teacher/class', label: 'My classes', icon: Users, roles: ['teacher'] },
     ],
   },
   {
     label: 'Attendance',
     items: [
-      { href: '/teacher/attendance', label: 'Mark attendance', icon: CalendarCheck, roles: STAFF },
+      { href: '/teacher/attendance', label: 'Mark attendance', icon: CalendarCheck, roles: STAFF, classTeacherOnly: true },
       { href: '/attendance/history', label: 'Attendance history', icon: History, roles: STAFF },
     ],
   },
@@ -72,6 +80,7 @@ export const NAV: NavGroup[] = [
       { href: '/teacher/marks', label: 'Marks entry', icon: ClipboardList, roles: ['teacher'] },
       { href: '/report-cards', label: 'Report cards', icon: Award, roles: ADMINS },
       { href: '/timetable', label: 'Timetable', icon: CalendarDays, roles: ADMINS },
+      { href: '/teacher/timetable', label: 'My timetable', icon: CalendarDays, roles: ['teacher'] },
       { href: '/homework', label: 'Homework', icon: BookOpenCheck, roles: STAFF },
     ],
   },
@@ -125,7 +134,10 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   const [leaving, setLeaving] = useState(false);
   const [open, setOpen] = useState(false);
   const school = useSchool(user);
-  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => i.roles.includes(user.role)) })).filter((g) => g.items.length);
+  // A teacher who is not a class teacher has no register to mark: hide that item once we know.
+  const { scope } = useTeacherScope(user.role === 'teacher');
+  const notClassTeacher = user.role === 'teacher' && scope !== null && !scope.isClassTeacher;
+  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => i.roles.includes(user.role) && !(i.classTeacherOnly && notClassTeacher)) })).filter((g) => g.items.length);
   const hrefs = groups.flatMap((g) => g.items.map((i) => i.href));
   const initials = `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase();
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ');

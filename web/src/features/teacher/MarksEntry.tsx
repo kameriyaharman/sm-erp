@@ -1,12 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowLeft, Lock, Save } from 'lucide-react';
+import { ArrowLeft, Eye, Lock, Save } from 'lucide-react';
 import { Badge, Button, Card, ErrorState, Notice, PageHeader, Select, Spinner, Stat, Table, Td, Th, cx } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { ApiError, apiSend } from '@/lib/session';
 import { formatDate } from '@/lib/format';
-import type { MarksEntryInput, MarksSheet, SectionChoice, TeacherPaper } from './types';
+import { friendlyError } from '@/lib/access';
+import type { MarksEntryInput, MarksSheet, TeacherPaper } from './types';
+
+/** A section the teacher may open for a paper; `canEdit: false` = class teacher, view only. */
+export interface MarksSectionOption {
+  id: string;
+  label: string;
+  canEdit: boolean;
+  mine?: boolean;
+}
+
+export const VIEW_ONLY_LABEL = 'View only, class teacher';
 
 interface RowState {
   marks: string;
@@ -45,14 +56,18 @@ export default function MarksEntry({
   onBack,
 }: {
   paper: TeacherPaper;
-  sections: SectionChoice[];
+  sections: MarksSectionOption[];
   initialSectionId: string;
   onBack: () => void;
 }) {
   const [sectionId, setSectionId] = useState(initialSectionId);
   const { data, error, loading, reload } = useApi<{ data: MarksSheet }>(sectionId ? `/marks${qs({ paperId: paper.id, sectionId })}` : null);
   const sheet = data?.data.section.id === sectionId ? data.data : null;
-  const locked = sheet?.paper.marksLocked ?? paper.marksLocked;
+  const option = sections.find((s) => s.id === sectionId);
+  // The server's answer wins; until it arrives use what the paper list said.
+  const viewOnly = sheet ? sheet.canEdit === false : option ? !option.canEdit : false;
+  const paperLocked = sheet?.paper.marksLocked ?? paper.marksLocked;
+  const locked = paperLocked || viewOnly;
   const max = sheet?.paper.maxMarks ?? paper.maxMarks;
   const pass = sheet?.paper.passMarks ?? paper.passMarks;
 
@@ -165,7 +180,7 @@ export default function MarksEntry({
       setServerErrors(fieldErrors);
       setMessage({
         tone: 'error',
-        text: err.code === 'PAPER_LOCKED' ? 'This paper was locked by the school office while you were editing. Your changes were not saved.' : err.message,
+        text: err.code === 'PAPER_LOCKED' ? 'This paper was locked by the school office while you were editing. Your changes were not saved.' : friendlyError(err),
       });
       if (err.code === 'PAPER_LOCKED') reload();
     } finally {
@@ -210,12 +225,19 @@ export default function MarksEntry({
               {sections.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
-                  {s.mine ? ' (my class)' : ''}
+                  {!s.canEdit ? ` (${VIEW_ONLY_LABEL.toLowerCase()})` : s.mine ? ' (my class)' : ''}
                 </option>
               ))}
             </Select>
           ) : sections[0] ? (
-            <Badge tone="indigo">{sections[0].label}</Badge>
+            <span className="flex flex-wrap items-center gap-2">
+              <Badge tone="indigo">{sections[0].label}</Badge>
+              {!sections[0].canEdit && (
+                <Badge tone="gray">
+                  <Eye className="h-3 w-3" aria-hidden /> {VIEW_ONLY_LABEL}
+                </Badge>
+              )}
+            </span>
           ) : null
         }
       />
@@ -228,7 +250,13 @@ export default function MarksEntry({
         <Spinner label="Loading students…" />
       ) : (
         <div className="flex flex-col gap-5 pb-20">
-          {locked && (
+          {viewOnly && !paperLocked && (
+            <Notice tone="info">
+              <span className="font-semibold">{VIEW_ONLY_LABEL}.</span>{' '}
+              You can see {paper.subject.name} marks for {sheet.section.label} because you are its class teacher. Only the {paper.subject.name} teacher and the school office can change them.
+            </Notice>
+          )}
+          {paperLocked && (
             <Notice tone="warn">
               <span className="inline-flex items-center gap-1.5 font-semibold">
                 <Lock className="h-4 w-4" aria-hidden /> Marks are locked.
@@ -271,54 +299,67 @@ export default function MarksEntry({
                       <tr key={s.studentId} className={cx(isChanged && 'bg-indigo-50/60 dark:bg-indigo-500/10')}>
                         <Td className="tabular-nums text-slate-500">{s.rollNumber ?? '–'}</Td>
                         <Td>
-                          <label htmlFor={inputId} className="font-medium">
+                          <label htmlFor={viewOnly ? undefined : inputId} className="font-medium">
                             {s.name}
                           </label>
                           <span className="block text-xs text-slate-500 dark:text-slate-400">{s.admissionNumber}</span>
                         </Td>
-                        <Td>
-                          <input
-                            id={inputId}
-                            ref={(el) => {
-                              inputs.current[i] = el;
-                            }}
-                            type="text"
-                            inputMode="decimal"
-                            autoComplete="off"
-                            enterKeyHint="next"
-                            value={row.absent ? '' : row.marks}
-                            placeholder={row.absent ? 'Absent' : '–'}
-                            disabled={locked || row.absent}
-                            aria-invalid={err ? true : undefined}
-                            aria-describedby={err ? `${inputId}-err` : undefined}
-                            onChange={(e) => update(s.studentId, { marks: e.target.value })}
-                            onKeyDown={(e) => onKey(e, i)}
-                            onFocus={(e) => e.target.select()}
-                            className={cx(
-                              'h-9 w-24 rounded-lg border bg-white px-3 text-right text-sm tabular-nums focus:outline-none focus:ring-2 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-slate-950 dark:disabled:bg-slate-800',
-                              err
-                                ? 'border-red-500 focus:ring-red-500/30'
-                                : below
-                                  ? 'border-amber-400 text-amber-800 focus:ring-indigo-500/30 dark:text-amber-300'
-                                  : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-500/30 dark:border-slate-700',
-                            )}
-                          />
-                          {err && (
-                            <span id={`${inputId}-err`} className="ml-2 text-xs text-red-600 dark:text-red-400">
-                              {err}
-                            </span>
-                          )}
-                        </Td>
-                        <Td align="center">
-                          <input
-                            type="checkbox"
-                            aria-label={`${s.name} absent`}
-                            checked={row.absent}
-                            disabled={locked}
-                            onChange={(e) => update(s.studentId, { absent: e.target.checked })}
-                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600"
-                          />
-                        </Td>
+                        {viewOnly ? (
+                          <>
+                            <Td>
+                              <span className={cx('font-semibold tabular-nums', row.absent ? 'font-normal text-slate-500 dark:text-slate-400' : below && 'text-amber-700 dark:text-amber-300')}>
+                                {row.absent ? 'Absent' : row.marks || '–'}
+                              </span>
+                            </Td>
+                            <Td align="center">{row.absent ? <Badge tone="gray">Absent</Badge> : <span className="text-slate-300 dark:text-slate-600">–</span>}</Td>
+                          </>
+                        ) : (
+                          <>
+                            <Td>
+                              <input
+                                id={inputId}
+                                ref={(el) => {
+                                  inputs.current[i] = el;
+                                }}
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                enterKeyHint="next"
+                                value={row.absent ? '' : row.marks}
+                                placeholder={row.absent ? 'Absent' : '–'}
+                                disabled={locked || row.absent}
+                                aria-invalid={err ? true : undefined}
+                                aria-describedby={err ? `${inputId}-err` : undefined}
+                                onChange={(e) => update(s.studentId, { marks: e.target.value })}
+                                onKeyDown={(e) => onKey(e, i)}
+                                onFocus={(e) => e.target.select()}
+                                className={cx(
+                                  'h-9 w-24 rounded-lg border bg-white px-3 text-right text-sm tabular-nums focus:outline-none focus:ring-2 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-slate-950 dark:disabled:bg-slate-800',
+                                  err
+                                    ? 'border-red-500 focus:ring-red-500/30'
+                                    : below
+                                      ? 'border-amber-400 text-amber-800 focus:ring-indigo-500/30 dark:text-amber-300'
+                                      : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-500/30 dark:border-slate-700',
+                                )}
+                              />
+                              {err && (
+                                <span id={`${inputId}-err`} className="ml-2 text-xs text-red-600 dark:text-red-400">
+                                  {err}
+                                </span>
+                              )}
+                            </Td>
+                            <Td align="center">
+                              <input
+                                type="checkbox"
+                                aria-label={`${s.name} absent`}
+                                checked={row.absent}
+                                disabled={locked}
+                                onChange={(e) => update(s.studentId, { absent: e.target.checked })}
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600"
+                              />
+                            </Td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}

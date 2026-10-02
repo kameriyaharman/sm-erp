@@ -127,6 +127,14 @@ export interface StaffMember {
   dateOfJoining: string | null;
   status: 'active' | 'inactive';
   classTeacherOf: Array<{ sectionId: string; label: string }>;
+  /** Current-year teaching assignments (one teacher per subject per section). */
+  subjects?: Array<{ sectionId: string; sectionLabel: string; subjectId: string; subjectName: string }>;
+}
+
+export interface SubjectConflict {
+  section: { id: string; label: string };
+  subject: { id: string; name: string };
+  teacher: { staffId: string; name: string };
 }
 
 // ------------------------------------------------------------------ fees / finance

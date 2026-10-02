@@ -26,6 +26,7 @@ import {
   type SectionOption,
   type SubmitAttendanceResult,
 } from './api';
+import { friendlyError } from '@/lib/access';
 
 /* ============================================================================
  * Teacher attendance grid
@@ -52,9 +53,11 @@ interface AttendanceGridProps {
   api: AttendanceApi;
   /** Let the user pick another date (the API still enforces how far back each role may go). */
   allowDateChange?: boolean;
+  /** Shown instead of the grid when the user has no section to mark (e.g. a teacher who is not a class teacher). */
+  emptyState?: ReactNode;
 }
 
-export default function AttendanceGrid({ api, allowDateChange = true }: AttendanceGridProps) {
+export default function AttendanceGrid({ api, allowDateChange = true, emptyState }: AttendanceGridProps) {
   const ids = { section: useId(), date: useId(), search: useId(), sheetTitle: useId() };
 
   const [sections, setSections] = useState<SectionOption[] | null>(null);
@@ -87,7 +90,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
         const pick = list.find((s) => s.isClassTeacher && !s.submission) ?? list.find((s) => s.isClassTeacher) ?? list[0];
         if (pick) setSectionId((current) => current || pick.id);
       })
-      .catch((err: Error) => err.name !== 'AbortError' && setSectionsError(err.message));
+      .catch((err: Error) => err.name !== 'AbortError' && setSectionsError(friendlyError(err)));
     return () => controller.abort();
   }, [api]);
 
@@ -114,7 +117,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
       })
       .catch((err: Error) => {
         if (err.name === 'AbortError') return;
-        setRosterError(err.message);
+        setRosterError(friendlyError(err));
         setLoadingRoster(false);
       });
     return () => controller.abort();
@@ -218,7 +221,7 @@ export default function AttendanceGrid({ api, allowDateChange = true }: Attendan
     return <FullState icon={TriangleAlert} title="Couldn't load your classes" body={sectionsError} />;
   }
   if (sections && sections.length === 0) {
-    return <FullState icon={CircleAlert} title="No classes assigned" body="You are not the class teacher of any section this year. Ask the branch admin to assign you." />;
+    return emptyState ?? <FullState icon={CircleAlert} title="No sections to mark" body="No sections are set up for this year yet. Add classes and sections first." />;
   }
 
   const submitLabel = neverSubmitted ? 'Submit attendance' : 'Update attendance';

@@ -19,7 +19,7 @@ const SEGMENTS: { key: keyof Pick<AttendanceHistoryDay, 'present' | 'late' | 'ha
 ];
 
 export default function AttendanceHistory() {
-  const { sections, defaultId, error: secError, reload: reloadSections } = useSections();
+  const { sections, defaultId, error: secError, reload: reloadSections, isTeacher } = useSections();
   const [sectionId, setSectionId] = useState('');
   const [month, setMonth] = useState(thisMonth());
   const [lowFirst, setLowFirst] = useState(false);
@@ -80,7 +80,11 @@ export default function AttendanceHistory() {
       {secError ? (
         <ErrorState message={secError} onRetry={reloadSections} />
       ) : sections && sections.length === 0 ? (
-        <EmptyState title="No classes set up yet" description="Classes and sections for this year will appear here once the school adds them." />
+        isTeacher ? (
+          <EmptyState title="No classes assigned yet" description="You haven't been assigned any classes or subjects yet. Ask the school office to assign your classes." />
+        ) : (
+          <EmptyState title="No classes set up yet" description="Classes and sections for this year will appear here once the school adds them." />
+        )
       ) : error ? (
         <ErrorState message={error} onRetry={reload} />
       ) : !h || !summary ? (

@@ -12,7 +12,6 @@ import {
   FileText,
   IndianRupee,
   NotebookPen,
-  Paperclip,
   Phone,
   UserX,
   Wallet,
@@ -21,6 +20,7 @@ import {
 import type { ChildHome, HomeworkItem, Period, ParentHomeData } from './types';
 import { ChildSwitcher, ParentShell, withChild } from './ParentLayout';
 import { time12 } from './format';
+import { AttachmentChip } from '@/components/Attachments';
 
 /* ============================================================================
  * Parent portal home (PWA)
@@ -523,42 +523,23 @@ function HomeworkList({ home, now, allHref }: { home: ChildHome; now: Date; allH
                       <span>
                         {item.teacher}, {relativeAgo(item.assignedAt, now)}
                       </span>
-                      {item.attachments.length > 0 && (
-                        <span className="inline-flex items-center gap-0.5">
-                          <Paperclip className="h-3 w-3" aria-hidden />
-                          {item.attachments.length}
-                          <span className="sr-only"> attachment{item.attachments.length === 1 ? '' : 's'}</span>
-                        </span>
-                      )}
                     </span>
                   </span>
                   <ChevronDown className={`mt-1 h-5 w-5 shrink-0 text-stone-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
                 </button>
                 <div id={panelId} hidden={!open} className="border-t border-stone-100 px-4 pb-4 pt-3 text-sm dark:border-line">
                   {item.details ? <p className="leading-relaxed text-stone-700 dark:text-stone-300">{item.details}</p> : <p className="text-stone-500 dark:text-stone-400">No extra instructions.</p>}
-                  {item.attachments.length > 0 && (
-                    <ul className="mt-3 flex flex-col gap-2">
-                      {item.attachments.map((file) => (
-                        <li key={file.name}>
-                          <a
-                            href={file.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-3 rounded-lg bg-stone-50 px-3 py-2.5 ring-1 ring-inset ring-stone-200 hover:bg-stone-100 dark:bg-canvas dark:ring-line dark:hover:bg-white/5"
-                          >
-                            <FileText className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-200" aria-hidden />
-                            <span className="min-w-0 flex-1 truncate font-medium">{file.name}</span>
-                            {file.sizeKb !== undefined && (
-                              <span className="shrink-0 text-xs tabular-nums text-stone-500 dark:text-stone-400">
-                                {file.sizeKb >= 1024 ? `${(file.sizeKb / 1024).toFixed(1)} MB` : `${file.sizeKb} KB`}
-                              </span>
-                            )}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
+                {/* Files stay visible without expanding: they are often the homework itself. */}
+                {item.attachments.length > 0 && (
+                  <ul className="flex flex-wrap gap-2 px-4 pb-4" aria-label={`Files for ${item.title}`}>
+                    {item.attachments.map((file) => (
+                      <li key={file.url} className="min-w-0 max-w-full">
+                        <AttachmentChip variant="parent" file={{ url: file.url, name: file.name, sizeBytes: file.sizeKb !== undefined ? file.sizeKb * 1024 : null }} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             );
           })}

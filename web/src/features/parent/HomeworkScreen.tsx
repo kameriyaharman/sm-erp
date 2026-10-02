@@ -6,6 +6,7 @@ import { apiGet } from '@/lib/session';
 import { EmptyBlock, ErrorBlock, Loading, secondaryBtn } from './ParentLayout';
 import { daysUntil, relativeAgo, shortDate, WEEKDAYS, parseDay } from './format';
 import type { ChildHome, HomeworkRow, PageMeta } from './types';
+import { AttachmentChip } from '@/components/Attachments';
 
 const PAGE = 30;
 type Group = { key: string; title: string; tone: 'critical' | 'warning' | 'neutral' | 'muted'; items: HomeworkRow[] };
@@ -140,6 +141,15 @@ export default function HomeworkScreen({ home }: { home: ChildHome }) {
                   <div id={panelId} hidden={!open} className="border-t border-stone-100 px-4 pb-4 pt-3 text-sm dark:border-line">
                     {item.details ? <p className="whitespace-pre-line leading-relaxed text-stone-700 dark:text-stone-300">{item.details}</p> : <p className="text-stone-500 dark:text-stone-400">No extra instructions from the teacher.</p>}
                   </div>
+                  {(item.attachments?.length ?? 0) > 0 && (
+                    <ul className="flex flex-wrap gap-2 px-4 pb-4" aria-label={`Files for ${item.title}`}>
+                      {item.attachments!.map((a) => (
+                        <li key={a.id} className="min-w-0 max-w-full">
+                          <AttachmentChip variant="parent" file={{ url: a.url, name: a.fileName, sizeBytes: a.sizeBytes, mimeType: a.mimeType }} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}

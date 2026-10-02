@@ -171,6 +171,7 @@ export interface HomeworkRow {
   assignedAt: string;
   dueDate: string;
   teacher: { name: string | null };
+  attachments?: Array<{ id: string; fileName: string; mimeType: string; sizeBytes: number; url: string; uploadedAt: string }>;
 }
 
 export interface PageMeta {

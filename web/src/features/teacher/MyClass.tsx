@@ -22,12 +22,15 @@ function showPhone(phone: string) {
 const rollKey = (r: string | null) => (r && /^\d+$/.test(r) ? Number(r) : Number.MAX_SAFE_INTEGER);
 
 export default function MyClass() {
-  const { sections, mine, error: secError, reload: reloadSections } = useSections();
+  const { sections, mine, error: secError, reload: reloadSections, subjectsFor } = useSections();
   const [sectionId, setSectionId] = useState('');
+  // Class-teacher section first, then the sections the teacher teaches a subject in.
+  const choices = useMemo(() => [...(sections ?? [])].sort((a, b) => Number(b.mine) - Number(a.mine)), [sections]);
   useEffect(() => {
-    if (!sectionId && mine[0]) setSectionId(mine[0].id);
-  }, [mine, sectionId]);
-  const section = mine.find((s) => s.id === sectionId) ?? null;
+    if (!sectionId && choices[0]) setSectionId(choices[0].id);
+  }, [choices, sectionId]);
+  const section = choices.find((s) => s.id === sectionId) ?? null;
+  const teaches = section ? (subjectsFor(section.id) ?? []).map((s) => s.name) : [];
 
   const roster = useApi<{ data: StudentRow[]; meta: PageMeta }>(sectionId ? `/students${qs({ sectionId, limit: 100 })}` : null);
   const timetable = useApi<{ data: SectionTimetable }>(sectionId ? `/timetable${qs({ sectionId })}` : null);
@@ -54,15 +57,15 @@ export default function MyClass() {
       </Page>
     );
   }
-  if (mine.length === 0) {
+  if (choices.length === 0) {
     return (
       <Page>
-        <PageHeader title="My class" />
+        <PageHeader title="My classes" />
         <Card>
           <EmptyState
             icon={<Users className="h-7 w-7" aria-hidden />}
-            title="You are not a class teacher this year"
-            description="When the school office makes you class teacher of a section, its roster and timetable appear here."
+            title="No classes assigned yet"
+            description="You haven't been assigned any classes or subjects yet. Ask the school office to assign your classes."
           />
         </Card>
       </Page>
@@ -72,14 +75,19 @@ export default function MyClass() {
   return (
     <Page wide>
       <PageHeader
-        title={section ? `My class: ${section.label}` : 'My class'}
-        description="Class roster with parent contacts, and the class timetable for the week."
+        title={section ? (section.mine ? `My class: ${section.label}` : section.label) : 'My classes'}
+        description={
+          section && !section.mine
+            ? `You teach ${teaches.join(', ') || 'here'} in this class. Roster with parent contacts, and the class timetable.`
+            : `Class roster with parent contacts, and the class timetable for the week.${mine.length === 0 ? ' You are not a class teacher this year.' : ''}`
+        }
         actions={
-          mine.length > 1 ? (
-            <Select aria-label="Class" value={sectionId} onChange={(e) => setSectionId(e.target.value)} className="!w-40">
-              {mine.map((s) => (
+          choices.length > 1 ? (
+            <Select aria-label="Class" value={sectionId} onChange={(e) => setSectionId(e.target.value)} className="!w-56">
+              {choices.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
+                  {s.mine ? ' (my class)' : (subjectsFor(s.id) ?? []).length ? ` (${(subjectsFor(s.id) ?? []).map((x) => x.name).join(', ')})` : ''}
                 </option>
               ))}
             </Select>
@@ -155,7 +163,8 @@ export default function MyClass() {
   );
 }
 
-function WeekGrid({ tt }: { tt: SectionTimetable }) {
+/** A week of periods, one day at a time on phones and the whole week from tablets up. */
+export function WeekGrid({ tt, emptyTitle = 'No timetable yet', emptyText = "The school office has not set this class's timetable." }: { tt: SectionTimetable; emptyTitle?: string; emptyText?: string }) {
   const now = new Date();
   const today = now.getDay();
   const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -169,7 +178,7 @@ function WeekGrid({ tt }: { tt: SectionTimetable }) {
   }, [tt]);
 
   if (slots.length === 0) {
-    return <EmptyState icon={<CalendarDays className="h-7 w-7" aria-hidden />} title="No timetable yet" description="The school office has not set this class's timetable." />;
+    return <EmptyState icon={<CalendarDays className="h-7 w-7" aria-hidden />} title={emptyTitle} description={emptyText} />;
   }
 
   const find = (d: number, start: string, end: string) => (tt.days[String(d)] ?? []).find((p) => p.start === start && p.end === end);
@@ -276,8 +285,10 @@ function PeriodText({ p, compact = false }: { p: TimetableSlot; compact?: boolea
   return (
     <span className="min-w-0">
       <span className={cx('block font-semibold', compact ? 'truncate text-xs' : 'text-sm')}>{p.label}</span>
-      {(p.teacher || p.room) && (
-        <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">{[p.teacher?.name, p.room].filter(Boolean).join(', ')}</span>
+      {p.section ? (
+        <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">{[p.section.label, p.room].filter(Boolean).join(', ')}</span>
+      ) : (
+        (p.teacher || p.room) && <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">{[p.teacher?.name, p.room].filter(Boolean).join(', ')}</span>
       )}
     </span>
   );

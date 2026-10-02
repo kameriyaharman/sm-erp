@@ -455,7 +455,8 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
-  size?: 'sm' | 'md' | 'lg';
+  /** xl: wide grids (e.g. the subject assignment matrix). */
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   description?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -485,7 +486,7 @@ export function Modal({
         aria-labelledby={titleId}
         className={cx(
           'flex max-h-[92dvh] w-full animate-sheet-up flex-col rounded-t-2xl border border-line bg-surface shadow-pop sm:rounded-2xl',
-          { sm: 'sm:max-w-md', md: 'sm:max-w-xl', lg: 'sm:max-w-3xl' }[size],
+          { sm: 'sm:max-w-md', md: 'sm:max-w-xl', lg: 'sm:max-w-3xl', xl: 'sm:max-w-5xl' }[size],
         )}
       >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-slate-200 dark:bg-white/10 sm:hidden" aria-hidden />

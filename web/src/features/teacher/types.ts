@@ -60,6 +60,8 @@ export interface TeacherPaper {
   marksLocked: boolean;
   entered: number;
   students: number;
+  /** Sections of the paper's class the teacher may open: subject sections (canEdit) + their class-teacher section (view only). */
+  sections?: Array<{ id: string; label: string; canEdit: boolean }>;
 }
 
 export interface MarksStudent {
@@ -75,6 +77,8 @@ export interface MarksStudent {
 export interface MarksSheet {
   paper: Omit<TeacherPaper, 'exam'> & { exam: { id: string; name: string } };
   section: { id: string; name: string; label: string };
+  /** false = view only (class teacher looking at another subject). */
+  canEdit?: boolean;
   students: MarksStudent[];
 }
 
@@ -140,6 +144,19 @@ export interface HomeworkRow {
   assignedAt: string;
   dueDate: string;
   teacher: { name: string | null };
+  createdBy?: { userId: string; name: string } | null;
+  /** The caller may delete it and add/remove files. */
+  canEdit?: boolean;
+  attachments?: HomeworkAttachment[];
+}
+
+export interface HomeworkAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;              // "/api/v1/homework/attachments/<id>"
+  uploadedAt: string;
 }
 
 export interface PageMeta {
@@ -176,6 +193,8 @@ export interface TimetableSlot {
   label: string;
   teacher: { staffId: string; name: string } | null;
   room: string | null;
+  /** Only in the teacher's own week (GET /teacher/timetable). */
+  section?: { id: string; label: string };
 }
 
 export interface SectionTimetable {

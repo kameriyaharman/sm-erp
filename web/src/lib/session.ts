@@ -247,12 +247,103 @@ export async function openPdf(path: string, filename = 'document.pdf'): Promise<
   }
 }
 
-/** Authenticated JSON GET against the API. */
+/** Authenticated JSON GET against the API. Throws ApiError (a subclass of AuthError) with the error code and details. */
 export async function apiGet<T>(path: string): Promise<T> {
   const token = await getAccessToken();
-  if (!token) throw new AuthError('UNAUTHENTICATED', 'Your session has ended. Please sign in again.', 401);
+  if (!token) throw new ApiError('UNAUTHENTICATED', 'Your session has ended. Please sign in again.', 401);
   const res = await fetch(`${API_BASE}${path}`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
   const payload = await res.json().catch(() => null);
-  if (!res.ok) throw new AuthError(payload?.error?.code ?? 'HTTP_ERROR', payload?.error?.message ?? `Request failed (${res.status})`, res.status);
+  if (!res.ok) throw new ApiError(payload?.error?.code ?? 'HTTP_ERROR', payload?.error?.message ?? `Request failed (${res.status})`, res.status, payload?.error?.details);
   return payload as T;
+}
+
+/** "/api/v1/homework/attachments/x" and "/homework/attachments/x" both mean the same API path. */
+function apiPath(path: string): string {
+  return path.startsWith(`${API_BASE}/`) ? path.slice(API_BASE.length) : path;
+}
+
+/**
+ * Authenticated multipart upload of one file (POST). `onProgress` gets 0..1 while the bytes go up.
+ * Uses XMLHttpRequest because fetch cannot report upload progress. Returns the parsed JSON body.
+ */
+export async function apiUpload<T = unknown>(path: string, file: File | Blob, fieldName = 'file', onProgress?: (fraction: number) => void, filename?: string): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new ApiError('UNAUTHENTICATED', 'Your session has ended. Please sign in again.', 401);
+  const form = new FormData();
+  if (filename !== undefined || !(file instanceof File)) form.append(fieldName, file, filename ?? 'upload');
+  else form.append(fieldName, file);
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}${apiPath(path)}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Accept', 'application/json');
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.min(1, e.loaded / e.total));
+    }
+    xhr.onerror = () => reject(new ApiError('NETWORK_ERROR', 'The upload was interrupted. Check your connection and try again.', 0));
+    xhr.onabort = () => reject(new ApiError('ABORTED', 'The upload was cancelled.', 0));
+    xhr.onload = () => {
+      let payload: { data?: unknown; error?: { code?: string; message?: string; details?: Record<string, string[] | undefined> } } | null = null;
+      try {
+        payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        payload = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(1);
+        resolve(payload as T);
+        return;
+      }
+      const code = payload?.error?.code ?? (xhr.status === 413 ? 'FILE_TOO_LARGE' : 'HTTP_ERROR');
+      const message = payload?.error?.message ?? (xhr.status === 413 ? 'Files can be at most 5 MB.' : `Upload failed (${xhr.status})`);
+      reject(new ApiError(code, message, xhr.status, payload?.error?.details));
+    };
+    xhr.send(form);
+  });
+}
+
+/** True for types a browser can show in a tab (PDFs and pictures); everything else is saved. */
+export function opensInBrowser(filename: string, mimeType?: string | null): boolean {
+  const type = (mimeType ?? '').toLowerCase();
+  if (type === 'application/pdf' || /^image\/(png|jpe?g|webp|gif)$/.test(type)) return true;
+  return /\.(pdf|png|jpe?g|webp|gif)$/i.test(filename);
+}
+
+/**
+ * Downloads any authenticated file (homework attachments, PDFs). The API needs the Bearer token,
+ * so a plain link cannot be used: the bytes are fetched as a blob. PDFs and images open in a new
+ * tab (the tab is opened before the fetch so popup blockers and iOS Safari allow it); other files
+ * are saved with <a download>.
+ */
+export async function downloadFile(path: string, filename: string, mimeType?: string | null): Promise<void> {
+  const inTab = opensInBrowser(filename, mimeType);
+  const win = inTab && typeof window !== 'undefined' ? window.open('', '_blank') : null;
+  try {
+    const token = await getAccessToken();
+    if (!token) throw new ApiError('UNAUTHENTICATED', 'Your session has ended. Please sign in again.', 401);
+    const res = await fetch(`${API_BASE}${apiPath(path)}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      const message = res.status === 404 ? 'This file is no longer available.' : payload?.error?.message ?? `Could not download the file (${res.status})`;
+      throw new ApiError(payload?.error?.code ?? 'HTTP_ERROR', message, res.status);
+    }
+    const blob = await res.blob();
+    const typed = mimeType && blob.type !== mimeType ? new Blob([blob], { type: mimeType }) : blob;
+    const url = URL.createObjectURL(typed);
+    if (win) {
+      win.location.href = url;
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (err) {
+    win?.close();
+    throw err;
+  }
 }

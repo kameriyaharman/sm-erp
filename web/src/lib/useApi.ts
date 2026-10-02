@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiGet } from './session';
+import { apiGet, AuthError } from './session';
+import { friendlyError } from './access';
 
 /**
  * Loads `path` with the signed-in user's token. Pass null to wait (e.g. until a filter is chosen).
@@ -10,6 +11,7 @@ import { apiGet } from './session';
 export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(path !== null);
   const seq = useRef(0);
 
@@ -21,11 +23,16 @@ export function useApi<T>(path: string | null) {
     const mine = ++seq.current;
     setLoading(true);
     setError(null);
+    setErrorCode(null);
     try {
       const result = await apiGet<T>(path);
       if (mine === seq.current) setData(result);
     } catch (err) {
-      if (mine === seq.current) setError((err as Error).message);
+      // 403s get a plain sentence (NOT_ASSIGNED, NOT_CLASS_TEACHER, ...) instead of the raw API message.
+      if (mine === seq.current) {
+        setError(friendlyError(err));
+        setErrorCode(err instanceof AuthError ? err.code : null);
+      }
     } finally {
       if (mine === seq.current) setLoading(false);
     }
@@ -35,7 +42,7 @@ export function useApi<T>(path: string | null) {
     load();
   }, [load]);
 
-  return { data, error, loading, reload: load, setData };
+  return { data, error, errorCode, loading, reload: load, setData };
 }
 
 /** Builds "?a=1&b=2", skipping empty values. */

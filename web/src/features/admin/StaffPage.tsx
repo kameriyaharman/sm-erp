@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Search, UserPlus } from 'lucide-react';
-import { Badge, Button, Card, controlClass, cx, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Td, Th } from '@/components/ui';
+import { BookOpenCheck, Search, UserPlus } from 'lucide-react';
+import { Badge, Button, Card, controlClass, cx, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Tabs, Td, Th } from '@/components/ui';
 import { useApi } from '@/lib/useApi';
 import { apiSend, currentUser } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import { Avatar, ConfirmModal, FilterBar, PhoneLink, errorCode, errorText, fieldErrors, useFlash } from './shared';
 import type { StaffMember, StaffRole, Wrapped } from './types';
+import { AssignSubjectsModal, SubjectChips, WhoTeaches } from './staff/AssignSubjects';
 
 const ROLE_BADGE: Record<StaffRole, { label: string; tone: 'indigo' | 'amber' | 'gray' }> = {
   teacher: { label: 'Teacher', tone: 'gray' },
@@ -25,7 +26,11 @@ export default function StaffPage() {
   const [toggle, setToggle] = useState<StaffMember | null>(null);
   const [busy, setBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<StaffMember | null>(null);
+  const [tab, setTab] = useState<'people' | 'subjects'>('people');
   const me = useMemo(() => currentUser(), []);
+  /** Nobody deactivates themselves or the owner (docs/rbac.md: admins edit staff in their scope). */
+  const canToggle = (s: StaffMember) => s.userId !== me?.id && s.role !== 'super_admin';
 
   const rows = useMemo(() => {
     const t = search.trim().toLowerCase();
@@ -70,117 +75,139 @@ export default function StaffPage() {
         }
       />
       {flash.node}
-      <Card padded={false}>
-        <FilterBar>
-          <label className="relative block sm:w-72">
-            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Search</span>
-            <Search className="pointer-events-none absolute bottom-2.5 left-3 h-4 w-4 text-slate-400" aria-hidden />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, email, designation"
-              className={cx(controlClass, 'h-10 pl-9 sm:h-9')}
-            />
-          </label>
-          <Select label="Role" value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
-            <option value="">All roles</option>
-            <option value="teacher">Teachers</option>
-            <option value="branch_admin">Admins</option>
-            <option value="super_admin">Owners</option>
-          </Select>
-          <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="">All</option>
-          </Select>
-        </FilterBar>
-        {loading && !data ? (
-          <Spinner label="Loading staff…" />
-        ) : error ? (
-          <ErrorState message={error} onRetry={reload} />
-        ) : rows.length === 0 ? (
-          <EmptyState title="No staff match" description="Try another search or status." />
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Name</Th>
-                <Th>Role</Th>
-                <Th>Designation</Th>
-                <Th>Contact</Th>
-                <Th>Class teacher of</Th>
-                <Th>Joined</Th>
-                <Th>Status</Th>
-                <Th align="right">
-                  <span className="sr-only">Actions</span>
-                </Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((s) => (
-                <tr key={s.id} className={s.status === 'inactive' ? 'opacity-70' : undefined}>
-                  <Td>
-                    <div className="flex items-center gap-3">
-                      <Avatar name={s.name} />
-                      <div>
-                        <p className="whitespace-nowrap font-medium">{s.name}</p>
-                        <p className="text-xs tabular-nums text-slate-500 dark:text-slate-400">{s.employeeCode ?? '-'}</p>
-                      </div>
-                    </div>
-                  </Td>
-                  <Td>
-                    <Badge tone={ROLE_BADGE[s.role].tone}>{ROLE_BADGE[s.role].label}</Badge>
-                  </Td>
-                  <Td className="whitespace-nowrap">
-                    {s.designation ?? '-'}
-                    {s.department && <span className="block text-xs text-slate-500 dark:text-slate-400">{s.department}</span>}
-                  </Td>
-                  <Td className="whitespace-nowrap">
-                    {s.email ? (
-                      <a href={`mailto:${s.email}`} className="block text-sm hover:underline">
-                        {s.email}
-                      </a>
-                    ) : null}
-                    {s.phone && <PhoneLink phone={s.phone} className="text-xs" />}
-                  </Td>
-                  <Td>
-                    {s.classTeacherOf.length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {s.classTeacherOf.map((c) => (
-                          <Badge key={c.sectionId} tone="indigo">
-                            {c.label}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-slate-400">-</span>
-                    )}
-                  </Td>
-                  <Td className="whitespace-nowrap">{s.dateOfJoining ? formatDate(s.dateOfJoining) : '-'}</Td>
-                  <Td>
-                    <Badge tone={s.status === 'active' ? 'green' : 'gray'}>{s.status === 'active' ? 'Active' : 'Inactive'}</Badge>
-                  </Td>
-                  <Td align="right">
-                    {s.userId !== me?.id && s.role !== 'super_admin' && (
-                      <Button
-                        size="sm"
-                        variant={s.status === 'active' ? 'ghost' : 'secondary'}
-                        onClick={() => {
-                          setToggleError(null);
-                          setToggle(s);
-                        }}
-                      >
-                        {s.status === 'active' ? 'Deactivate' : 'Activate'}
-                      </Button>
-                    )}
-                  </Td>
+      <Tabs<'people' | 'subjects'>
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'people', label: 'Staff' },
+          { value: 'subjects', label: 'Who teaches what' },
+        ]}
+      />
+      {tab === 'subjects' ? (
+        <WhoTeaches />
+      ) : (
+        <Card padded={false}>
+          <FilterBar>
+            <label className="relative block sm:w-72">
+              <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Search</span>
+              <Search className="pointer-events-none absolute bottom-2.5 left-3 h-4 w-4 text-slate-400" aria-hidden />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Name, email, designation"
+                className={cx(controlClass, 'h-10 pl-9 sm:h-9')}
+              />
+            </label>
+            <Select label="Role" value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
+              <option value="">All roles</option>
+              <option value="teacher">Teachers</option>
+              <option value="branch_admin">Admins</option>
+              <option value="super_admin">Owners</option>
+            </Select>
+            <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="">All</option>
+            </Select>
+          </FilterBar>
+          {loading && !data ? (
+            <Spinner label="Loading staff…" />
+          ) : error ? (
+            <ErrorState message={error} onRetry={reload} />
+          ) : rows.length === 0 ? (
+            <EmptyState title="No staff match" description="Try another search or status." />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Name</Th>
+                  <Th>Role</Th>
+                  <Th>Designation</Th>
+                  <Th>Contact</Th>
+                  <Th>Classes and subjects</Th>
+                  <Th className="hidden 2xl:table-cell">Joined</Th>
+                  <Th>Status</Th>
+                  <Th align="right">
+                    <span className="sr-only">Actions</span>
+                  </Th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </Card>
+              </thead>
+              <tbody>
+                {rows.map((s) => (
+                  <tr key={s.id} className={s.status === 'inactive' ? 'opacity-70' : undefined}>
+                    <Td>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={s.name} />
+                        <div>
+                          <p className="whitespace-nowrap font-medium">{s.name}</p>
+                          <p className="text-xs tabular-nums text-slate-500 dark:text-slate-400">{s.employeeCode ?? '-'}</p>
+                        </div>
+                      </div>
+                    </Td>
+                    <Td>
+                      <Badge tone={ROLE_BADGE[s.role].tone}>{ROLE_BADGE[s.role].label}</Badge>
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      {s.designation ?? '-'}
+                      {s.department && <span className="block text-xs text-slate-500 dark:text-slate-400">{s.department}</span>}
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      {s.email ? (
+                        <a href={`mailto:${s.email}`} className="block text-sm hover:underline">
+                          {s.email}
+                        </a>
+                      ) : null}
+                      {s.phone && <PhoneLink phone={s.phone} className="text-xs" />}
+                    </Td>
+                    <Td>
+                      {s.role === 'teacher' ? <SubjectChips member={s} /> : <span className="text-slate-400">-</span>}
+                    </Td>
+                    <Td className="hidden whitespace-nowrap 2xl:table-cell">{s.dateOfJoining ? formatDate(s.dateOfJoining) : '-'}</Td>
+                    <Td>
+                      <Badge tone={s.status === 'active' ? 'green' : 'gray'}>{s.status === 'active' ? 'Active' : 'Inactive'}</Badge>
+                    </Td>
+                    <Td align="right">
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        {s.role === 'teacher' && s.status === 'active' && (
+                          <Button size="sm" variant="secondary" icon={<BookOpenCheck aria-hidden />} onClick={() => setAssigning(s)} aria-label={`Assign subjects to ${s.name}`}>
+                            Assign subjects
+                          </Button>
+                        )}
+                        {canToggle(s) && (
+                          <Button
+                            size="sm"
+                            variant={s.status === 'active' ? 'ghost' : 'secondary'}
+                            onClick={() => {
+                              setToggleError(null);
+                              setToggle(s);
+                            }}
+                          >
+                            {s.status === 'active' ? 'Deactivate' : 'Activate'}
+                          </Button>
+                        )}
+                      </span>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {assigning && data && (
+        <AssignSubjectsModal
+          teacher={assigning}
+          staff={data.data}
+          onClose={() => setAssigning(null)}
+          onSaved={(message) => {
+            setAssigning(null);
+            flash.show('success', message);
+            reload();
+          }}
+        />
+      )}
 
       <AddStaffModal
         open={adding}

@@ -149,6 +149,7 @@ export default function GlobalSearch({ role }: { role: Role }) {
 
   const showResults = q.length >= 2;
   const results = showResults && (
+    <>
     <div id={listId} role="listbox" aria-label="Matching students" className="max-h-[min(420px,70vh)] overflow-y-auto p-1.5">
       {loading && !hits ? (
         <p className="flex items-center gap-2 px-3 py-6 text-sm text-slate-500 dark:text-slate-400">
@@ -200,6 +201,9 @@ export default function GlobalSearch({ role }: { role: Role }) {
         })
       )}
     </div>
+    {/* Teachers only find students of their own classes (the API limits the search); profiles are for the office. */}
+    {!canOpen && <p className="border-t border-line px-4 py-2 text-xs text-slate-500 dark:text-slate-400">Only students of your classes are shown.</p>}
+    </>
   );
 
   const inputProps = {
