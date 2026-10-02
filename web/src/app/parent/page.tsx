@@ -1,36 +1,39 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import ParentHome from '@/features/parent/ParentHome';
-import type { ParentHomeData } from '@/features/parent/types';
+import { Suspense } from 'react';
+import ParentHome, { urgentChildId } from '@/features/parent/ParentHome';
+import { ErrorBlock, Skeleton, useParentHome, useSelectedChild } from '@/features/parent/ParentLayout';
 import RequireAuth from '@/components/RequireAuth';
-import { apiGet } from '@/lib/session';
 
 function Home() {
-  const [data, setData] = useState<ParentHomeData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const load = useCallback(() => {
-    setError(null);
-    apiGet<{ data: ParentHomeData }>('/parent/home').then((r) => setData(r.data), (e: Error) => setError(e.message));
-  }, []);
-  useEffect(load, [load]);
+  const { data, error, reload } = useParentHome();
+  const { childId, select } = useSelectedChild(data ? data.children.map((c) => c.child) : null, data ? urgentChildId(data) : undefined);
 
   if (error) {
     return (
-      <div className="mx-auto max-w-md px-6 py-20 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        <button type="button" onClick={load} className="mt-4 rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium dark:border-stone-700">Try again</button>
+      <div className="mx-auto max-w-md px-6 py-20">
+        <ErrorBlock message={error} onRetry={reload} />
       </div>
     );
   }
-  if (!data) return <div className="mx-auto max-w-2xl px-5 py-6"><div className="h-48 animate-pulse rounded-2xl bg-stone-200/70 dark:bg-stone-800" /></div>;
-  return <ParentHome data={data} />;
+  if (!data) {
+    return (
+      <div className="mx-auto flex max-w-2xl flex-col gap-4 px-5 py-6" role="status" aria-label="Loading">
+        <Skeleton className="h-10 w-2/3" />
+        <Skeleton className="h-28" />
+        <Skeleton className="h-48" />
+      </div>
+    );
+  }
+  return <ParentHome data={data} childId={childId} onSelectChild={select} />;
 }
 
 export default function ParentHomePage() {
   return (
     <RequireAuth roles={['parent']} shell={false}>
-      <Home />
+      <Suspense>
+        <Home />
+      </Suspense>
     </RequireAuth>
   );
 }

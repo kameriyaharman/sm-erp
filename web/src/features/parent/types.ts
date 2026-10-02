@@ -5,7 +5,8 @@
  * Fee and attendance fields map onto existing APIs:
  *   fee        <- /fees/students/:id/dues  (totals.totalDue, overdue = open invoices past due)
  *   attendance <- student_attendance for today (status + parent_notifications)
- * Timetable, homework and bus are not in the backend yet; these types are the contract to build them to.
+ * Timetable, homework and bus come from the section timetable, homework and transport tables
+ * (API contract §11). The per-child screens below use the /parent/children/:id/* endpoints.
  */
 
 export type Money = string; // rupees, "31000.00"
@@ -68,6 +69,11 @@ export interface BusStatus {
   etaMinutes: number | null;  // to the child's stop
   stopName: string;
   updatedAt: string;          // ISO
+  pickupTime?: string;        // "07:12"
+  dropTime?: string;
+  driverName?: string | null;
+  driverPhone?: string | null;
+  vehicleNumber?: string | null;
 }
 
 export interface ChildHome {
@@ -86,4 +92,139 @@ export interface ParentHomeData {
   schoolName: string;
   schoolPhone: string | null;
   children: ChildHome[];
+}
+
+/* ============================================================================
+ * Per-child screens (GET /parent/children/:studentId/*)
+ * ========================================================================== */
+
+export interface FeeInvoiceItem {
+  feeHead: string;
+  description: string | null;
+  amount: Money;
+}
+
+export interface FeeInvoice {
+  id: string;
+  invoiceNumber: string;
+  periodLabel: string | null;
+  issueDate: string;
+  dueDate: string;
+  netAmount: Money;
+  paidAmount: Money;
+  balanceAmount: Money;
+  status: 'unpaid' | 'partially_paid' | 'paid';
+  overdue: boolean;
+  items: FeeInvoiceItem[];
+}
+
+export interface UpcomingInstallment {
+  feeHead: string;
+  installmentNo: number;
+  dueDate: string;
+  netAmount: Money;
+}
+
+export interface FeeReceipt {
+  id: string;
+  receiptNumber: string;
+  receivedAt: string;         // ISO
+  amount: Money;
+  paymentMode: string;
+}
+
+export interface ChildFees {
+  child: { id: string; name: string; className: string; sectionName: string };
+  totals: { totalFee: Money; paid: Money; pending: Money; overdue: Money };
+  invoices: FeeInvoice[];
+  upcoming: UpcomingInstallment[];
+  receipts: FeeReceipt[];
+  onlinePayment: { enabled: boolean };
+}
+
+export type AttendanceDayStatus = 'present' | 'absent' | 'late' | 'leave' | 'half_day';
+
+export interface AttendanceStats {
+  workingDays: number;
+  present: number;
+  absent: number;
+  late: number;
+  leave: number;
+  halfDay: number;
+  percentage: number | null;
+}
+
+export interface ChildAttendance {
+  month: string;              // YYYY-MM
+  days: { date: string; status: AttendanceDayStatus }[];
+  summary: AttendanceStats;
+  year: AttendanceStats;
+}
+
+/** Homework row as /homework and /parent/children/:id/homework return it. */
+export interface HomeworkRow {
+  id: string;
+  section: { id: string; label: string };
+  subject: { id: string; name: string } | null;
+  title: string;
+  details: string | null;
+  assignedAt: string;
+  dueDate: string;
+  teacher: { name: string | null };
+}
+
+export interface PageMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface TimetablePeriod {
+  periodNo: number;
+  start: string;
+  end: string;
+  kind: Period['kind'];
+  subject: { id: string; name: string } | null;
+  label: string;
+  teacher: { staffId: string; name: string } | null;
+  room: string | null;
+}
+
+export interface SectionTimetable {
+  section: { id: string; label: string } | null;
+  /** "1" (Monday) ... "6" (Saturday), always present. */
+  days: Record<string, TimetablePeriod[]>;
+}
+
+export interface ChildTransport {
+  route: { name: string; vehicleNumber: string | null; driverName: string | null; driverPhone: string | null; attendantName: string | null };
+  stop: { name: string; pickupTime: string | null; dropTime: string | null };
+  stops: { name: string; pickupTime: string | null; dropTime: string | null; isMine: boolean }[];
+}
+
+/** GET /documents/students/:studentId/report-cards (raw rows, snake_case). */
+export interface StudentReportCard {
+  id: string;
+  academic_year_id: string;
+  academic_year: string;
+  term_id: string | null;
+  term_name: string | null;
+  is_final: boolean;
+  percentage: string | null;
+  overall_grade: string | null;
+  result: string | null;
+  status: string;
+  published_at: string | null;
+}
+
+export interface SchoolNotice {
+  id: string;
+  title: string;
+  body: string;
+  audience: 'all' | 'parents' | 'teachers';
+  class: { id: string; name: string } | null;
+  pinned: boolean;
+  createdAt: string;
+  createdBy: { name: string | null } | null;
 }

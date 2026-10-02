@@ -76,7 +76,7 @@ export async function payFees(opts: {
       handler: () => resolve('success'),
       modal: { ondismiss: () => resolve('dismissed'), confirm_close: true },
     });
-    rzp.on('payment.failed', (r: any) => resolve({ failed: r?.error?.description ?? 'Payment failed' }));
+    rzp.on('payment.failed', (r: unknown) => resolve({ failed: (r as { error?: { description?: string } } | null)?.error?.description ?? 'Payment failed' }));
     rzp.open();
   });
 

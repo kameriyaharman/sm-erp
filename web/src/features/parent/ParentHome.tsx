@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
+import Link from 'next/link';
 import {
-  Bell,
   BookOpenCheck,
   Bus,
   CalendarDays,
@@ -10,18 +10,17 @@ import {
   CircleAlert,
   Clock,
   FileText,
-  GraduationCap,
-  House,
   IndianRupee,
   NotebookPen,
   Paperclip,
   Phone,
-  User,
   UserX,
   Wallet,
   X,
 } from 'lucide-react';
 import type { ChildHome, HomeworkItem, Period, ParentHomeData } from './types';
+import { ChildSwitcher, ParentShell, withChild } from './ParentLayout';
+import { time12 } from './format';
 
 /* ============================================================================
  * Parent portal home (PWA)
@@ -37,17 +36,15 @@ export interface ParentHomeLinks {
   reportCard: (childId: string) => string;
   homework: (childId: string) => string;
   bus: (childId: string) => string;
-  notifications: string;
-  tabs: { home: string; fees: string; academics: string; bus: string; profile: string };
+  timetable: (childId: string) => string;
 }
 
 const DEFAULT_LINKS: ParentHomeLinks = {
-  payFees: (id) => `/parent/fees?child=${id}`,
-  reportCard: (id) => `/parent/report-card?child=${id}`,
-  homework: (id) => `/parent/homework?child=${id}`,
-  bus: (id) => `/parent/bus?child=${id}`,
-  notifications: '/parent/notifications',
-  tabs: { home: '/parent', fees: '/parent/fees', academics: '/parent/academics', bus: '/parent/bus', profile: '/parent/profile' },
+  payFees: (id) => withChild('/parent/fees', id),
+  reportCard: (id) => withChild('/parent/academics', id, { tab: 'report-cards' }),
+  homework: (id) => withChild('/parent/homework', id),
+  bus: (id) => withChild('/parent/bus', id),
+  timetable: (id) => withChild('/parent/academics', id, { tab: 'timetable' }),
 };
 
 export interface ParentHomeProps {
@@ -55,7 +52,10 @@ export interface ParentHomeProps {
   /** Injected clock, for tests and previews. */
   now?: Date;
   links?: Partial<ParentHomeLinks>;
+  /** Unread count for the bell; omitted = worked out from /notices. */
   unreadNotifications?: number;
+  /** Controlled selection (kept in the URL by the page). Omitted = the child who needs attention most. */
+  childId?: string | null;
   onSelectChild?: (childId: string) => void;
 }
 
@@ -106,34 +106,36 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`;
 
 /* ============================================================================ */
 
-export default function ParentHome({ data, now = new Date(), links: linkOverrides, unreadNotifications = 0, onSelectChild }: ParentHomeProps) {
-  const links = { ...DEFAULT_LINKS, ...linkOverrides, tabs: { ...DEFAULT_LINKS.tabs, ...linkOverrides?.tabs } };
-  // Open on the child who needs attention most.
-  const initialChild = useMemo(() => {
-    const urgent = data.children.find((c) => c.attendance.status === 'absent' || rupees(c.fee.overdue) > 0);
-    return (urgent ?? data.children[0])?.child.id;
-  }, [data.children]);
-  const [childId, setChildId] = useState(initialChild);
+/** The child who needs attention most (absent today or fees overdue), else the first. */
+export function urgentChildId(data: ParentHomeData): string | undefined {
+  const urgent = data.children.find((c) => c.attendance.status === 'absent' || rupees(c.fee.overdue) > 0);
+  return (urgent ?? data.children[0])?.child.id;
+}
+
+export default function ParentHome({ data, now = new Date(), links: linkOverrides, unreadNotifications, childId: controlledId, onSelectChild }: ParentHomeProps) {
+  const links = { ...DEFAULT_LINKS, ...linkOverrides };
+  const initialChild = useMemo(() => urgentChildId(data), [data]);
+  const [ownChildId, setOwnChildId] = useState(initialChild);
+  const childId = controlledId ?? ownChildId;
   const home = data.children.find((c) => c.child.id === childId) ?? data.children[0];
+  const title = `${greeting(now)}, ${data.parentName.split(' ')[0]}`;
 
   if (!home) {
     return (
-      <AppShell links={links} unread={unreadNotifications} data={data} now={now}>
+      <ParentShell active="home" childId={null} title={title} subtitle={data.schoolName} unread={unreadNotifications}>
         <p className="px-5 py-16 text-center text-sm text-stone-500 dark:text-stone-400">No children are linked to your account yet. Contact the school office to link them.</p>
-      </AppShell>
+      </ParentShell>
     );
   }
 
   function selectChild(id: string) {
-    setChildId(id);
+    setOwnChildId(id);
     onSelectChild?.(id);
   }
 
   return (
-    <AppShell links={links} unread={unreadNotifications} data={data} now={now}>
-      {data.children.length > 1 && (
-        <ChildSwitcher children={data.children} selectedId={home.child.id} onSelect={selectChild} />
-      )}
+    <ParentShell active="home" childId={home.child.id} title={title} subtitle={data.schoolName} unread={unreadNotifications}>
+      {data.children.length > 1 && <ChildSwitcher items={data.children} selectedId={home.child.id} onSelect={selectChild} />}
 
       <div className="flex flex-col gap-7 px-4 pb-6 pt-4 sm:px-6">
         <UrgentAlerts key={home.child.id} home={home} now={now} schoolPhone={data.schoolPhone} payHref={links.payFees(home.child.id)} />
@@ -145,150 +147,11 @@ export default function ParentHome({ data, now = new Date(), links: linkOverride
           <QuickActions home={home} now={now} links={links} />
         </section>
 
-        <Timetable key={`tt-${home.child.id}`} home={home} now={now} />
+        <Timetable key={`tt-${home.child.id}`} home={home} now={now} allHref={links.timetable(home.child.id)} />
 
         <HomeworkList key={`hw-${home.child.id}`} home={home} now={now} allHref={links.homework(home.child.id)} />
       </div>
-    </AppShell>
-  );
-}
-
-/* ============================================================================
- * Shell: app bar + bottom tabs, with safe-area insets for installed PWAs
- * ========================================================================== */
-
-function AppShell({ children, links, unread, data, now }: { children: ReactNode; links: ParentHomeLinks; unread: number; data: ParentHomeData; now: Date }) {
-  const tabs: { key: keyof ParentHomeLinks['tabs']; label: string; icon: Icon }[] = [
-    { key: 'home', label: 'Home', icon: House },
-    { key: 'fees', label: 'Fees', icon: Wallet },
-    { key: 'academics', label: 'Academics', icon: GraduationCap },
-    { key: 'bus', label: 'Bus', icon: Bus },
-    { key: 'profile', label: 'Profile', icon: User },
-  ];
-
-  return (
-    <div className="flex min-h-dvh flex-col bg-stone-50 text-stone-900 antialiased [-webkit-tap-highlight-color:transparent] dark:bg-stone-950 dark:text-stone-100">
-      <header
-        className="sticky top-0 z-30 border-b border-stone-200/70 bg-stone-50/90 backdrop-blur-md dark:border-stone-800 dark:bg-stone-950/85"
-        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-      >
-        <div className="mx-auto flex h-14 w-full max-w-2xl items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-[#0b6b78] dark:text-[#5cc0cc]">{data.schoolName}</p>
-            <p className="truncate text-base font-semibold leading-tight">
-              {greeting(now)}, {data.parentName.split(' ')[0]}
-            </p>
-          </div>
-          <a
-            href={links.notifications}
-            aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
-            className="relative flex h-10 w-10 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-stone-200/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] dark:text-stone-300 dark:hover:bg-stone-800"
-          >
-            <Bell className="h-5 w-5" aria-hidden />
-            {unread > 0 && (
-              <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#d03b3b] px-1 text-[10px] font-bold text-white ring-2 ring-stone-50 dark:ring-stone-950">
-                {unread > 9 ? '9+' : unread}
-              </span>
-            )}
-          </a>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-2xl flex-1" style={{ paddingBottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))' }}>
-        {children}
-      </main>
-
-      <nav
-        aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 backdrop-blur-md dark:border-stone-800 dark:bg-stone-900/95"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-      >
-        <ul className="mx-auto grid h-16 max-w-2xl grid-cols-5">
-          {tabs.map(({ key, label, icon: TabIcon }) => {
-            const active = key === 'home';
-            return (
-              <li key={key}>
-                <a
-                  href={links.tabs[key]}
-                  aria-current={active ? 'page' : undefined}
-                  className={[
-                    'flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0b6b78]',
-                    active ? 'text-[#0b6b78] dark:text-[#5cc0cc]' : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200',
-                  ].join(' ')}
-                >
-                  <span className={`flex h-7 w-12 items-center justify-center rounded-full ${active ? 'bg-[#e3f1f2] dark:bg-[#0b6b78]/30' : ''}`}>
-                    <TabIcon className="h-5 w-5" aria-hidden />
-                  </span>
-                  {label}
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-    </div>
-  );
-}
-
-/* ============================================================================
- * Child switcher (siblings)
- * ========================================================================== */
-
-function ChildSwitcher({ children, selectedId, onSelect }: { children: ChildHome[]; selectedId: string; onSelect: (id: string) => void }) {
-  return (
-    <div className="border-b border-stone-200/70 px-4 py-3 sm:px-6 dark:border-stone-800">
-      <div role="radiogroup" aria-label="Choose child" className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
-        {children.map(({ child, attendance, fee }) => {
-          const selected = child.id === selectedId;
-          const needsAttention = attendance.status === 'absent' || rupees(fee.overdue) > 0;
-          return (
-            <button
-              key={child.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              onClick={() => onSelect(child.id)}
-              className={[
-                'flex shrink-0 items-center gap-2.5 rounded-full border py-1.5 pl-1.5 pr-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78]',
-                selected
-                  ? 'border-[#0b6b78] bg-[#e3f1f2] dark:border-[#5cc0cc] dark:bg-[#0b6b78]/25'
-                  : 'border-stone-200 bg-white hover:border-stone-300 dark:border-stone-700 dark:bg-stone-900',
-              ].join(' ')}
-            >
-              <span className="relative">
-                <Avatar name={child.name} selected={selected} />
-                {needsAttention && (
-                  <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-[#d03b3b] ring-2 ring-white dark:ring-stone-900" aria-hidden />
-                )}
-              </span>
-              <span>
-                <span className="block text-sm font-semibold leading-tight">{child.firstName}</span>
-                <span className="block text-xs text-stone-500 dark:text-stone-400">
-                  {child.className} {child.sectionName}
-                  {needsAttention && <span className="sr-only">, needs attention</span>}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function Avatar({ name, selected }: { name: string; selected?: boolean }) {
-  // Siblings share a surname, so use the first two letters of the first name: "Aa", "An".
-  const initials = (name.split(/\s+/)[0] ?? '').slice(0, 2);
-  return (
-    <span
-      aria-hidden
-      className={[
-        'flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold',
-        selected ? 'bg-[#0b6b78] text-white dark:bg-[#5cc0cc] dark:text-stone-950' : 'bg-stone-200 text-stone-700 dark:bg-stone-700 dark:text-stone-200',
-      ].join(' ')}
-    >
-      {initials}
-    </span>
+    </ParentShell>
   );
 }
 
@@ -346,12 +209,12 @@ function UrgentAlerts({ home, now, schoolPhone, payHref }: { home: ChildHome; no
             {fee.oldestOverdueDate ? `Unpaid since ${shortDate(fee.oldestOverdueDate)}. ` : ''}
             Total due for {child.firstName}: <span className="font-semibold tabular-nums">{inr.format(due)}</span>. Late fees may apply.
           </p>
-          <a
+          <Link
             href={payHref}
             className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-[#0b6b78] px-4 text-sm font-semibold text-white shadow-sm hover:bg-[#095a65] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] focus-visible:ring-offset-2 dark:bg-[#5cc0cc] dark:text-stone-950 dark:hover:bg-[#7dd0da] dark:focus-visible:ring-offset-stone-950"
           >
             Pay {inr.format(due)} now
-          </a>
+          </Link>
         </Alert>
       )}
 
@@ -359,9 +222,9 @@ function UrgentAlerts({ home, now, schoolPhone, payHref }: { home: ChildHome; no
         <Alert tone="warning" icon={Clock} title={`${inr.format(due)} due ${daysUntil(fee.nextDueDate!, now) === 0 ? 'today' : `on ${shortDate(fee.nextDueDate!)}`}`}>
           <p>
             Pay before the due date to avoid a late fee.{' '}
-            <a href={payHref} className="font-semibold underline underline-offset-2">
+            <Link href={payHref} className="font-semibold underline underline-offset-2">
               Pay now
-            </a>
+            </Link>
           </p>
         </Alert>
       )}
@@ -434,7 +297,9 @@ function QuickActions({ home, now, links }: { home: ChildHome; now: Date; links:
       case 'at_school':
         return { text: 'Parked at school', tone: 'muted' as const };
       default:
-        return { text: 'Not running now', tone: 'muted' as const };
+        return bus.pickupTime
+          ? { text: `Pickup ${time12(bus.pickupTime)}`, tone: 'muted' as const }
+          : { text: 'Not running now', tone: 'muted' as const };
     }
   })();
 
@@ -487,7 +352,7 @@ function QuickActions({ home, now, links }: { home: ChildHome; now: Date; links:
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {tiles.map(({ label, href, icon: TileIcon, status, badge }) => (
         <li key={label}>
-          <a
+          <Link
             href={href}
             className="group flex h-full min-h-[7.5rem] flex-col justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgba(28,25,23,0.04)] transition-colors hover:border-[#0b6b78]/40 active:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6b78] dark:border-stone-800 dark:bg-stone-900 dark:hover:border-[#5cc0cc]/40 dark:active:bg-stone-800"
           >
@@ -505,7 +370,7 @@ function QuickActions({ home, now, links }: { home: ChildHome; now: Date; links:
               <span className="block text-[15px] font-semibold leading-snug">{label}</span>
               <span className="mt-0.5 block text-xs text-stone-500 dark:text-stone-400">{status}</span>
             </span>
-          </a>
+          </Link>
         </li>
       ))}
     </ul>
@@ -516,7 +381,7 @@ function QuickActions({ home, now, links }: { home: ChildHome; now: Date; links:
  * Timetable
  * ========================================================================== */
 
-function Timetable({ home, now }: { home: ChildHome; now: Date }) {
+function Timetable({ home, now, allHref }: { home: ChildHome; now: Date; allHref: string }) {
   const todayIdx = now.getDay(); // 0 = Sunday
   const schoolDays = [1, 2, 3, 4, 5, 6].filter((d) => (home.timetable[d]?.length ?? 0) > 0);
   const [day, setDay] = useState(schoolDays.includes(todayIdx) ? todayIdx : schoolDays[0] ?? 1);
@@ -532,7 +397,7 @@ function Timetable({ home, now }: { home: ChildHome; now: Date }) {
 
   return (
     <section aria-labelledby="timetable-title">
-      <SectionHeader id="timetable-title" icon={CalendarDays} title={isToday ? "Today's timetable" : `${FULL_WEEKDAYS[day]}'s timetable`} />
+      <SectionHeader id="timetable-title" icon={CalendarDays} title={isToday ? "Today's timetable" : `${FULL_WEEKDAYS[day]}'s timetable`} action={{ label: 'Full week', href: allHref }} />
 
       <div role="tablist" aria-label="Day of the week" className="mb-3 grid grid-cols-6 gap-1.5">
         {schoolDays.map((d) => {
@@ -728,9 +593,9 @@ function SectionHeader({ id, icon: HeaderIcon, title, action }: { id: string; ic
         {title}
       </h2>
       {action && (
-        <a href={action.href} className="rounded-lg px-2 py-1 text-sm font-semibold text-[#0b6b78] hover:bg-[#e3f1f2] dark:text-[#7dd0da] dark:hover:bg-[#0b6b78]/20">
+        <Link href={action.href} className="rounded-lg px-2 py-1 text-sm font-semibold text-[#0b6b78] hover:bg-[#e3f1f2] dark:text-[#7dd0da] dark:hover:bg-[#0b6b78]/20">
           {action.label}
-        </a>
+        </Link>
       )}
     </div>
   );
