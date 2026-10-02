@@ -1,0 +1,14 @@
+# Keep secrets, dev files and tests out of the build context and the image.
+.env
+.env.*
+!.env.example
+node_modules
+npm-debug.log*
+.git
+.github
+.railway
+test
+coverage
+*.md
+Dockerfile
+.dockerignore
