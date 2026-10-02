@@ -32,6 +32,10 @@ export async function reportCardPdf(req, res) {
   await renderReportCard(rc, res, { verifyBaseUrl: verifyBaseUrl() });
 }
 
+export async function listSectionReportCards(req, res) {
+  res.json({ data: await service.listSectionReportCards(req.auth, req.valid.params.sectionId, req.valid.query) });
+}
+
 export async function listStudentReportCards(req, res) {
   res.json({ data: await service.listStudentReportCards(req.auth, req.valid.params.studentId) });
 }

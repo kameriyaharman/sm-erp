@@ -6,6 +6,8 @@ const text = (max) => z.string().trim().min(1).max(max);
 
 export const idParams = z.object({ id: uuid });
 export const studentParams = z.object({ studentId: uuid });
+export const sectionParams = z.object({ sectionId: uuid });
+export const sectionReportCardsQuery = z.object({ termId: uuid.optional() }).strict();
 export const codeParams = z.object({ code: z.string().trim().min(12).max(20) });
 
 export const generateBody = z.object({

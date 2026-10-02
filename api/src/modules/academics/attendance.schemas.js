@@ -50,3 +50,10 @@ export const submitAttendanceBody = z
       seen.add(record.studentId);
     });
   });
+
+export const historyQuery = z
+  .object({
+    sectionId: uuid,
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Expected YYYY-MM').optional(),   // default: this month
+  })
+  .strict();

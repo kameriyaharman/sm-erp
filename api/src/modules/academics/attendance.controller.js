@@ -19,3 +19,7 @@ export async function submitAttendance(req, res) {
 export async function listNotifications(req, res) {
   res.json({ data: await attendanceService.listNotifications(req.auth, req.valid.query) });
 }
+
+export async function attendanceHistory(req, res) {
+  res.json({ data: await attendanceService.attendanceHistory(req.auth, req.valid.query) });
+}

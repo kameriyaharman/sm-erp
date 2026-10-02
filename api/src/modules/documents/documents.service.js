@@ -196,6 +196,27 @@ function assertSectionAccess(auth, ctx) {
   assertBranchAccess(auth, { tenantId: ctx.tenant_id, branchId: ctx.branch_id }, 'Section not found');
 }
 
+/** Report cards of a section (termId omitted = annual cards). Teacher: class teacher only, as for generate. */
+export async function listSectionReportCards(auth, sectionId, { termId }) {
+  const ctx = await repo.getSectionContext(pool, sectionId, auth.userId);
+  if (!ctx) throw AppError.notFound('Section not found', 'SECTION_NOT_FOUND');
+  assertSectionAccess(auth, ctx);
+  const rows = await repo.listSectionReportCards(pool, { sectionId, academicYearId: ctx.academic_year_id, termId: termId ?? null });
+  return rows.map((r) => ({
+    id: r.id,
+    studentId: r.student_id,
+    name: r.name,
+    rollNumber: r.roll_number,
+    status: r.status,
+    percentage: r.percentage,
+    grade: r.overall_grade,
+    rankInSection: r.rank_in_section,
+    result: r.result,
+    teacherRemarks: r.teacher_remarks,
+    publishedAt: r.published_at,
+  }));
+}
+
 /** Admin: publish all generated cards of a section (each gets a verification code). */
 export async function publishReportCards(auth, { sectionId, termId }) {
   const ctx = await repo.getSectionContext(pool, sectionId, auth.userId);

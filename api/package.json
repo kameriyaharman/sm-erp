@@ -15,7 +15,7 @@
     "migrate:status": "node scripts/migrate.js --status",
     "test": "node --test test/*.test.js",
     "job:fee-reminders": "node scripts/run-fee-reminders.js",
-    "release": "node scripts/migrate.js && node scripts/seed-demo.js"
+    "release": "node scripts/migrate.js && node scripts/seed-demo.js && node scripts/seed-demo-extras.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

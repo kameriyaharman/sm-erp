@@ -19,6 +19,7 @@ router.post('/report-cards/generate', staff, validate({ body: s.generateBody }),
 router.post('/report-cards/publish', admins, validate({ body: s.publishBody }), controller.publishReportCards);
 router.patch('/report-cards/:id', staff, validate({ params: s.idParams, body: s.updateReportCardBody }), controller.updateReportCard);
 router.get('/report-cards/:id/pdf', viewers, pdfLimiter, validate({ params: s.idParams, query: s.pdfQuery }), controller.reportCardPdf);
+router.get('/sections/:sectionId/report-cards', staff, validate({ params: s.sectionParams, query: s.sectionReportCardsQuery }), controller.listSectionReportCards);
 router.get('/students/:studentId/report-cards', viewers, validate({ params: s.studentParams }), controller.listStudentReportCards);
 
 // ---- Certificates (school office only)

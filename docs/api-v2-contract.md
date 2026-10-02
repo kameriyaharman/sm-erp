@@ -306,3 +306,39 @@ Online pay (existing): `POST /finance/create-order { invoiceIds }`; receipt PDF:
 
 ## Changes
 (record deviations here)
+
+Backend implementation (migration `009_school_operations.sql`). All changes are additive or pin down
+behaviour the contract left open; no field was renamed or removed.
+
+- **`branchId` for super_admin.** POST `/staff`, `/exams`, `/notices`, `/transport/routes`, `/expenses` accept an
+  optional `branchId` (super_admin only; default = the tenant's head office). List GETs (`/school/*`, `/students`,
+  `/staff`, `/exams`, `/transport/routes`, `/expenses`, `/expenses/monthly`) accept optional `?branchId=` the same way.
+  Other roles passing a different branch get 403 `BRANCH_SCOPE_VIOLATION`.
+- **Validation `details`** follow the existing middleware: field errors are grouped by request part,
+  e.g. `{ "body": { "firstName": ["Required"] } }` / `{ "query": { "sectionId": [...] } }`.
+- **Parent scope** = primary parent (`parent_id`) **or** a linked guardian (`student_guardians`), same rule as
+  `/parent/home` and online payments.
+- **POST /exams** creates the exam with status `scheduled`.
+- **PATCH /students/:id**: changing `sectionId` keeps the roll number if free in the new section, else assigns the
+  next one. `parentPhone` links the student to an existing parent account with that mobile; otherwise it updates the
+  linked parent's mobile (422 `PARENT_NOT_FOUND` if the student has no parent). Roll clash → 409 `ROLL_NUMBER_TAKEN`.
+- **POST /students**: a roll number already used in the section → 409 `ROLL_NUMBER_TAKEN`; section of another
+  class → 422 `SECTION_NOT_IN_CLASS`; a section outside the current year → 422 `SECTION_NOT_CURRENT`.
+- **PATCH /papers/:id**: lowering `maxMarks` below an entered mark → 422 `MARKS_EXCEED_MAX`; changing `maxMarks` of a
+  locked paper that has marks → 409 `PAPER_LOCKED` (send `marksLocked: false` in the same request to unlock).
+- **PUT /marks**: `marksObtained` above the paper's maximum → 400 `VALIDATION_ERROR` (`details.body["entries.N.marksObtained"]`).
+  GET /marks for a section that does not sit the paper → 422 `SECTION_NOT_IN_PAPER`.
+- **PUT /timetable**: overlapping / duplicate periods → 400 `VALIDATION_ERROR` (`details.body["periods.N.field"]`);
+  a teacher already teaching another section at an overlapping time that weekday → 409 `TEACHER_CLASH`
+  (`details.clashes`). A non-class period without a label gets a default label ("Break", "Assembly", "Activity").
+- **PATCH /transport/routes/:id `stops`**: the new list (in order) is matched to existing stops by name
+  (case-insensitive); matched stops keep their students, unmatched existing stops are removed only if nobody is
+  assigned (else 409 `STOP_IN_USE`). Lowering `capacity` below the riders → 422 `CAPACITY_TOO_LOW`. `status`
+  (`active|inactive`) may also be patched.
+- **PUT /transport/assignments**: `stopId` omitted → first stop of the route. Full route → 409 `ROUTE_FULL`;
+  stop on another route → 422 `STOP_NOT_ON_ROUTE`; inactive route → 422 `ROUTE_INACTIVE`.
+- **POST /homework**: `dueDate` before today (school time zone) → 400 `VALIDATION_ERROR`. Teacher deleting another
+  teacher's homework → 403 `NOT_OWNER`.
+- **GET /parent/children/:id/timetable** for a child with no section: `{ "section": null, "days": { "1": [], ... } }`.
+- **Parent home `timetable`** periods also omit `teacher` / `room` when not set; homework without a subject shows
+  `subject: "General"`; `bus.updatedAt` is the response time (no live tracking yet).

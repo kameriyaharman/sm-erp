@@ -254,3 +254,55 @@ export async function notificationsFor(db, sectionId, date) {
   );
   return rows;
 }
+
+// ---------------------------------------------------------------- monthly history
+
+/** One row per submitted register in the month, with status counts. */
+export async function historyDays(db, sectionId, from, to) {
+  const { rows } = await db.query(
+    `SELECT sub.attendance_date AS date, sub.submitted_at,
+            count(a.student_id)::int                              AS total,
+            count(*) FILTER (WHERE a.status = 'present')::int     AS present,
+            count(*) FILTER (WHERE a.status = 'absent')::int      AS absent,
+            count(*) FILTER (WHERE a.status = 'late')::int        AS late,
+            count(*) FILTER (WHERE a.status = 'leave')::int       AS leave,
+            count(*) FILTER (WHERE a.status = 'half_day')::int    AS half_day
+       FROM attendance_submissions sub
+       LEFT JOIN student_attendance a
+              ON a.section_id = sub.section_id AND a.attendance_date = sub.attendance_date
+             AND a.attendance_date BETWEEN $2 AND $3
+      WHERE sub.section_id = $1 AND sub.attendance_date BETWEEN $2 AND $3
+      GROUP BY sub.attendance_date, sub.submitted_at
+      ORDER BY sub.attendance_date`,
+    [sectionId, from, to],
+  );
+  return rows;
+}
+
+/** Students of the section (current, plus anyone marked in it that month) with their month counts. */
+export async function historyStudents(db, sectionId, from, to) {
+  const { rows } = await db.query(
+    `WITH marks AS (
+       SELECT student_id,
+              count(*) FILTER (WHERE status = 'present')::int  AS present,
+              count(*) FILTER (WHERE status = 'absent')::int   AS absent,
+              count(*) FILTER (WHERE status = 'late')::int     AS late,
+              count(*) FILTER (WHERE status = 'leave')::int    AS leave,
+              count(*) FILTER (WHERE status = 'half_day')::int AS half_day
+         FROM student_attendance
+        WHERE section_id = $1 AND attendance_date BETWEEN $2 AND $3
+        GROUP BY student_id
+     )
+     SELECT sp.id AS student_id, concat_ws(' ', u.first_name, u.last_name) AS name, sp.roll_number,
+            COALESCE(m.present, 0) AS present, COALESCE(m.absent, 0) AS absent, COALESCE(m.late, 0) AS late,
+            COALESCE(m.leave, 0) AS leave, COALESCE(m.half_day, 0) AS half_day
+       FROM student_profiles sp
+       JOIN users u ON u.id = sp.user_id
+       LEFT JOIN marks m ON m.student_id = sp.id
+      WHERE sp.deleted_at IS NULL
+        AND ((sp.section_id = $1 AND sp.status IN ('enrolled', 'suspended')) OR m.student_id IS NOT NULL)
+      ORDER BY NULLIF(regexp_replace(sp.roll_number, '\\D', '', 'g'), '')::int NULLS LAST, name`,
+    [sectionId, from, to],
+  );
+  return rows;
+}

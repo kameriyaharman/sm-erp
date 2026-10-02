@@ -229,6 +229,21 @@ export async function listReportCardsForStudent(db, studentId, { publishedOnly }
   return rows;
 }
 
+/** Report cards of one section for a term (termId null = annual / final cards), in roll order. */
+export async function listSectionReportCards(db, { sectionId, academicYearId, termId }) {
+  const { rows } = await db.query(
+    `SELECT rc.id, rc.student_id, concat_ws(' ', u.first_name, u.last_name) AS name, sp.roll_number, rc.status,
+            rc.percentage::float8 AS percentage, rc.overall_grade, rc.rank_in_section, rc.result, rc.teacher_remarks, rc.published_at
+       FROM report_cards rc
+       JOIN student_profiles sp ON sp.id = rc.student_id
+       JOIN users u             ON u.id = sp.user_id
+      WHERE rc.section_id = $1 AND rc.academic_year_id = $2 AND rc.term_id IS NOT DISTINCT FROM $3
+      ORDER BY NULLIF(regexp_replace(sp.roll_number, '\\D', '', 'g'), '')::int NULLS LAST, name`,
+    [sectionId, academicYearId, termId],
+  );
+  return rows;
+}
+
 // ===================================================================== certificates: inputs
 
 /** Everything the TC / bonafide needs about a student, locked when issuing. */

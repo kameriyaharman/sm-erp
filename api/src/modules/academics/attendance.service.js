@@ -5,6 +5,8 @@ import { assertBranchAccess } from '../../middleware/scope.js';
 import { logger } from '../../utils/logger.js';
 import { kickDispatcher } from '../notifications/dispatcher.js';
 import * as repo from './attendance.repository.js';
+import { loadSectionForStaff } from '../shared/access.js';
+import { attendanceStats, monthRange } from '../shared/school-ops.helpers.js';
 
 // How far back each role may record or change attendance (0 = today only).
 export const BACKDATE_DAYS = { teacher: 1, branch_admin: 30, super_admin: 30 };
@@ -303,4 +305,43 @@ function groupBy(items, keyOf) {
     map.get(key).push(item);
   }
   return map;
+}
+
+// =====================================================================
+// Monthly history (any section of the caller's branch)
+// =====================================================================
+
+export async function attendanceHistory(auth, { sectionId, month }) {
+  const section = await loadSectionForStaff(pool, auth, sectionId);
+  const m = month ?? isoOf(section.today).slice(0, 7);
+  const { from, to } = monthRange(m);
+  const [days, students] = await Promise.all([repo.historyDays(pool, sectionId, from, to), repo.historyStudents(pool, sectionId, from, to)]);
+  return {
+    section: { id: section.id, label: `${section.class_name} ${section.name}` },
+    month: m,
+    days: days.map((d) => ({
+      date: d.date,
+      total: d.total,
+      present: d.present,
+      absent: d.absent,
+      late: d.late,
+      leave: d.leave,
+      halfDay: d.half_day,
+      submittedAt: d.submitted_at,
+    })),
+    students: students.map((s) => {
+      const stats = attendanceStats(s);
+      return {
+        studentId: s.student_id,
+        name: s.name,
+        rollNumber: s.roll_number,
+        present: stats.present,
+        absent: stats.absent,
+        late: stats.late,
+        leave: stats.leave,
+        halfDay: stats.halfDay,
+        percentage: stats.percentage,
+      };
+    }),
+  };
 }
