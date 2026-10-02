@@ -82,15 +82,18 @@ interface FeeCollectionTableProps {
   api: FeesApi;
   /** Optional fixed filters, e.g. from a branch or class picker elsewhere on the page. */
   baseParams?: Omit<ListStudentsParams, 'search' | 'status' | 'sort' | 'page' | 'limit'>;
+  /** Starting search text and status filter, e.g. from ?search= links elsewhere in the app. */
+  initialSearch?: string;
+  initialStatus?: StatusFilter;
 }
 
-export default function FeeCollectionTable({ api, baseParams }: FeeCollectionTableProps) {
+export default function FeeCollectionTable({ api, baseParams, initialSearch = '', initialStatus = 'all' }: FeeCollectionTableProps) {
   const searchId = useId();
   const sortId = useId();
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch);
   const debouncedSearch = useDebouncedValue(search.trim());
-  const [status, setStatus] = useState<StatusFilter>('all');
+  const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [sort, setSort] = useState<SortKey>('pending');
   const [page, setPage] = useState(1);
 

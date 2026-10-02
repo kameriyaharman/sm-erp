@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { IndianRupee, Percent, TriangleAlert, Users } from 'lucide-react';
 import RequireAuth from '@/components/RequireAuth';
 import DashboardOverview, { type Defaulter, type Kpi, type MonthlyFinance } from '@/features/dashboard/DashboardOverview';
+import { QuickActions, TodayAttendance } from '@/features/dashboard/DashboardExtras';
+import type { AttendanceSection, ExpenseMonth } from '@/features/admin/types';
 import { apiGet } from '@/lib/session';
 
 interface Analytics {
@@ -25,8 +27,8 @@ interface Me {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function toProps(me: Me['data'], a: Analytics, d: DefaultersResponse, s: StudentList) {
-  const months = a.byMonth.map((m) => ({ label: MONTHS[Number(m.month.slice(5, 7)) - 1], collected: Number(m.collected) }));
+function toProps(me: Me['data'], a: Analytics, d: DefaultersResponse, s: StudentList, expenses: ExpenseMonth[]) {
+  const months = a.byMonth.map((m) => ({ key: m.month.slice(0, 7), label: MONTHS[Number(m.month.slice(5, 7)) - 1], collected: Number(m.collected) }));
   const collectedTrend = months.map((m) => m.collected);
   const last = collectedTrend.at(-1) ?? 0;
   const prev = collectedTrend.at(-2) ?? 0;
@@ -49,8 +51,11 @@ function toProps(me: Me['data'], a: Analytics, d: DefaultersResponse, s: Student
     daysOverdue: r.daysOverdue,
     openInvoices: r.openInvoices,
   }));
-  // No expense module yet: the chart shows collections only.
-  const finance: MonthlyFinance[] = months.map((m) => ({ month: m.label, collection: m.collected, expense: 0 }));
+  // Collections and expenses matched by month (YYYY-MM); a month present in either series is shown.
+  const collectedBy = new Map(months.map((m) => [m.key, m.collected]));
+  const spentBy = new Map(expenses.map((e) => [e.month.slice(0, 7), Number(e.amount)]));
+  const keys = [...new Set([...collectedBy.keys(), ...spentBy.keys()])].sort();
+  const finance: MonthlyFinance[] = keys.map((k) => ({ month: MONTHS[Number(k.slice(5, 7)) - 1], collection: collectedBy.get(k) ?? 0, expense: spentBy.get(k) ?? 0 }));
   const asOf = new Date(`${d.meta.asOf}T00:00:00`);
   return {
     campusName: [me.schoolName, me.role === 'super_admin' ? 'all campuses' : me.branchName].filter(Boolean).join(', '),
@@ -67,18 +72,23 @@ function toProps(me: Me['data'], a: Analytics, d: DefaultersResponse, s: Student
 function Dashboard() {
   const router = useRouter();
   const [props, setProps] = useState<ReturnType<typeof toProps> | null>(null);
+  const [sections, setSections] = useState<AttendanceSection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [me, analytics, defaulters, students] = await Promise.all([
+      // Expenses and today's registers are extras: the overview still loads if either fails.
+      const [me, analytics, defaulters, students, expenses, today] = await Promise.all([
         apiGet<Me>('/auth/me'),
         apiGet<{ data: Analytics }>('/fees/analytics'),
         apiGet<DefaultersResponse>('/finance/defaulters?limit=8&sort=days'),
         apiGet<StudentList>('/fees/students?limit=1'),
+        apiGet<{ data: ExpenseMonth[] }>('/expenses/monthly').catch(() => ({ data: [] as ExpenseMonth[] })),
+        apiGet<{ data: AttendanceSection[] }>('/academics/sections').catch(() => null),
       ]);
-      setProps(toProps(me.data, analytics.data, defaulters, students));
+      setProps(toProps(me.data, analytics.data, defaulters, students, expenses.data));
+      setSections(today?.data ?? null);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -97,9 +107,14 @@ function Dashboard() {
     );
   }
   if (!props) {
-    return <div className="mx-auto max-w-[1440px] px-8 py-8"><div className="h-40 animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-800" /></div>;
+    return <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-8"><div className="h-40 animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-800" /></div>;
   }
-  return <DashboardOverview {...props} onViewAllDefaulters={() => router.push('/fees?status=overdue')} onExport={() => window.print()} />;
+  return (
+    <DashboardOverview {...props} onViewAllDefaulters={() => router.push('/fees/defaulters')} studentHref={(id) => `/students/${id}`} onExport={() => window.print()}>
+      <QuickActions />
+      {sections && <TodayAttendance sections={sections} />}
+    </DashboardOverview>
+  );
 }
 
 export default function DashboardPage() {

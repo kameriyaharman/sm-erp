@@ -203,7 +203,14 @@ export async function apiSend<T = unknown>(
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
     const details = payload?.error?.details;
-    const firstField = details && typeof details === 'object' ? Object.values(details as Record<string, string[]>).flat().find(Boolean) : null;
+    // details is { body: { field: [msg] } } (grouped by request part); older endpoints send { field: [msg] }.
+    const firstMessage = (v: unknown): string | null => {
+      if (typeof v === 'string') return v;
+      if (Array.isArray(v)) return v.map(firstMessage).find(Boolean) ?? null;
+      if (v && typeof v === 'object') return Object.values(v).map(firstMessage).find(Boolean) ?? null;
+      return null;
+    };
+    const firstField = details && typeof details === 'object' ? firstMessage(details) : null;
     const message = payload?.error?.code === 'VALIDATION_ERROR' && firstField ? String(firstField) : payload?.error?.message ?? `Request failed (${res.status})`;
     throw new ApiError(payload?.error?.code ?? 'HTTP_ERROR', message, res.status, details);
   }

@@ -170,7 +170,8 @@ export function Textarea({ label, hint, error, className, id, ...rest }: Textare
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cx('overflow-x-auto', className)}>
+    // relative: keeps absolutely positioned children (sr-only labels) inside the scroll box on phones
+    <div className={cx('relative overflow-x-auto', className)}>
       <table className="w-full min-w-full border-collapse text-sm">{children}</table>
     </div>
   );

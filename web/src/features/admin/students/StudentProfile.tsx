@@ -1,0 +1,546 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { ArrowLeft, Bus, FileBadge, FileDown, IndianRupee, Pencil, Receipt, ScrollText } from 'lucide-react';
+import { Badge, Button, Card, EmptyState, ErrorState, Notice, Page, PageHeader, Spinner, Stat, Table, Tabs, Td, Th } from '@/components/ui';
+import { useApi } from '@/lib/useApi';
+import { API_BASE, apiSend, getAccessToken, openPdf } from '@/lib/session';
+import { formatDate, formatDateTime, formatInr, formatTime, titleCase } from '@/lib/format';
+import CollectFeeModal from '@/features/fees/CollectFeeModal';
+import { createFeesApi, type StudentDues, type StudentFeeRow } from '@/features/fees/api';
+import { toPaise } from '@/features/fees/format';
+import { Avatar, ConfirmModal, DefinitionList, PhoneLink, ReportCardBadge, StudentStatusBadge, errorText, useClasses, useFlash } from '../shared';
+import { BonafideModal, TcModal } from '../certificates/IssueModals';
+import AssignModal from '../transport/AssignModal';
+import EditStudentModal from './EditStudentModal';
+import type { StudentDetail, Wrapped } from '../types';
+
+type Tab = 'overview' | 'fees' | 'attendance' | 'reports' | 'certificates' | 'transport';
+
+export default function StudentProfile() {
+  const { id } = useParams<{ id: string }>();
+  const params = useSearchParams();
+  const { data, error, loading, reload, setData } = useApi<Wrapped<StudentDetail>>(`/students/${id}`);
+  const { sections } = useClasses();
+  const flash = useFlash();
+  const [tab, setTab] = useState<Tab>('overview');
+  const [editing, setEditing] = useState(false);
+  const [modal, setModal] = useState<null | 'collect' | 'bonafide' | 'tc' | 'bus' | 'unbus'>(null);
+  const [busy, setBusy] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [duesKey, setDuesKey] = useState(0);
+
+  const feesApi = useMemo(() => createFeesApi({ baseUrl: API_BASE, getAccessToken }), []);
+  const s = data?.data;
+
+  if (loading && !s) return <Spinner label="Loading student…" />;
+  if (error || !s) return <ErrorState message={error ?? 'Student not found'} onRetry={reload} />;
+
+  const feeRow: StudentFeeRow = {
+    studentId: s.id,
+    branchId: '',
+    studentName: s.name,
+    admissionNumber: s.admissionNumber,
+    rollNumber: s.rollNumber,
+    class: s.class,
+    section: s.section,
+    academicYear: s.academicYear ?? { id: '', name: '' },
+    totalFee: s.fees.totalFee,
+    paid: s.fees.paid,
+    pending: s.fees.pending,
+    overdue: s.fees.overdue,
+    notYetInvoiced: '0.00',
+    openInvoices: 0,
+    status: toPaise(s.fees.overdue) > 0 ? 'overdue' : toPaise(s.fees.pending) > 0 ? 'unpaid' : 'paid',
+  };
+  const classLabel = [s.class?.name, s.section?.name].filter(Boolean).join(' ') || 'No class';
+  const active = s.status === 'enrolled' || s.status === 'suspended';
+  const att = s.attendance;
+
+  async function removeBus() {
+    setBusy(true);
+    setModalError(null);
+    try {
+      await apiSend('PUT', '/transport/assignments', { studentId: id, routeId: null });
+      setModal(null);
+      flash.show('success', 'Removed from school transport.');
+      reload();
+    } catch (err) {
+      setModalError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Page wide>
+      <PageHeader
+        back={
+          <Link href="/students" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">
+            <ArrowLeft className="h-4 w-4" aria-hidden /> Students
+          </Link>
+        }
+        title={s.name}
+        description={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>{classLabel}</span>
+            <span className="tabular-nums">Adm. {s.admissionNumber}</span>
+            {s.rollNumber && <span>Roll {s.rollNumber}</span>}
+            <StudentStatusBadge status={s.status} />
+          </span>
+        }
+        actions={
+          <>
+            <Button variant="secondary" icon={<Pencil className="h-4 w-4" aria-hidden />} onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+            {active && (
+              <Button icon={<IndianRupee className="h-4 w-4" aria-hidden />} onClick={() => setModal('collect')}>
+                Collect fee
+              </Button>
+            )}
+          </>
+        }
+      />
+      {params.get('admitted') === '1' && !flash.flash && (
+        <div className="mb-4">
+          <Notice tone="success">
+            Admission complete. {s.name} is in {classLabel} with admission number <strong>{s.admissionNumber}</strong>.
+          </Notice>
+        </div>
+      )}
+      {flash.node}
+
+      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <Avatar name={s.name} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Parent</p>
+          {s.parent ? (
+            <p className="flex flex-wrap items-center gap-x-3 text-sm">
+              <span className="font-medium">{s.parent.name}</span>
+              <PhoneLink phone={s.parent.phone} />
+              {s.parent.email && (
+                <a href={`mailto:${s.parent.email}`} className="text-indigo-700 hover:underline dark:text-indigo-300">
+                  {s.parent.email}
+                </a>
+              )}
+            </p>
+          ) : (
+            <p className="text-sm text-slate-500">No parent linked</p>
+          )}
+        </div>
+        {s.transport && (
+          <div className="text-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Bus</p>
+            <p>
+              {s.transport.routeName} · {s.transport.stopName}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Fees paid" value={formatInr(s.fees.paid)} hint={`of ${formatInr(s.fees.totalFee)} this year`} tone={toPaise(s.fees.paid) > 0 ? 'good' : 'default'} />
+        <Stat label="Pending" value={formatInr(s.fees.pending)} tone={toPaise(s.fees.pending) > 0 ? 'warn' : 'default'} hint="incl. not yet invoiced" />
+        <Stat label="Overdue" value={formatInr(s.fees.overdue)} tone={toPaise(s.fees.overdue) > 0 ? 'bad' : 'default'} hint={toPaise(s.fees.overdue) > 0 ? 'past due date' : 'nothing overdue'} />
+        <Stat
+          label="Attendance"
+          value={att.percentage === null ? '-' : `${att.percentage.toFixed(1)}%`}
+          tone={att.percentage === null ? 'default' : att.percentage >= 85 ? 'good' : att.percentage >= 75 ? 'warn' : 'bad'}
+          hint={`${att.workingDays} working days`}
+        />
+      </div>
+
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'overview', label: 'Overview' },
+          { value: 'fees', label: 'Fees' },
+          { value: 'attendance', label: 'Attendance' },
+          { value: 'reports', label: `Report cards (${s.reportCards.length})` },
+          { value: 'certificates', label: `Certificates (${s.certificates.length})` },
+          { value: 'transport', label: 'Transport' },
+        ]}
+      />
+
+      {tab === 'overview' && (
+        <Card
+          title="Personal details"
+          actions={
+            <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" aria-hidden />} onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          }
+        >
+          <DefinitionList
+            items={[
+              ['First name', s.firstName],
+              ['Last name', s.lastName],
+              ['Gender', titleCase(s.gender)],
+              ['Date of birth', s.dateOfBirth ? formatDate(s.dateOfBirth) : null],
+              ['Class', classLabel],
+              ['Roll number', s.rollNumber],
+              ['Admission number', s.admissionNumber],
+              ['Admission date', s.admissionDate ? formatDate(s.admissionDate) : null],
+              ['Academic year', s.academicYear?.name],
+              ["Father's name", s.fatherName],
+              ["Mother's name", s.motherName],
+              ["Guardian's name", s.guardianName],
+              ['Social category', s.socialCategory],
+              ['PEN (UDISE+)', s.penNumber],
+              ['APAAR ID', s.apaarId],
+              ['Blood group', s.bloodGroup],
+              ['Address', s.address],
+              ['Status', titleCase(s.status)],
+              ...(s.dateOfLeaving ? ([['Date of leaving', formatDate(s.dateOfLeaving)]] as Array<[string, string]>) : []),
+            ]}
+          />
+        </Card>
+      )}
+
+      {tab === 'fees' && <FeesTab studentId={s.id} reloadKey={duesKey} canCollect={active} onCollect={() => setModal('collect')} admissionNumber={s.admissionNumber} />}
+
+      {tab === 'attendance' && (
+        <Card title="Attendance this year">
+          {att.workingDays === 0 ? (
+            <EmptyState title="No attendance marked yet" description="Registers taken for the student's section will show here." />
+          ) : (
+            <div className="space-y-5">
+              <div className="flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-hidden>
+                {(
+                  [
+                    ['present', 'bg-emerald-500'],
+                    ['late', 'bg-indigo-400'],
+                    ['halfDay', 'bg-sky-400'],
+                    ['leave', 'bg-amber-400'],
+                    ['absent', 'bg-red-500'],
+                  ] as const
+                ).map(([k, cls]) => (
+                  <div key={k} className={cls} style={{ width: `${(att[k] / att.workingDays) * 100}%` }} />
+                ))}
+              </div>
+              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                {(
+                  [
+                    ['Working days', att.workingDays],
+                    ['Present', att.present],
+                    ['Late', att.late],
+                    ['Half day', att.halfDay],
+                    ['On leave', att.leave],
+                    ['Absent', att.absent],
+                  ] as const
+                ).map(([k, v]) => (
+                  <div key={k}>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{k}</dt>
+                    <dd className="text-lg font-semibold tabular-nums">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Attendance rate <strong className="text-slate-900 dark:text-slate-100">{att.percentage === null ? '-' : `${att.percentage.toFixed(1)}%`}</strong> (present + late + half of half days).{' '}
+                <Link href="/attendance/history" className="text-indigo-700 hover:underline dark:text-indigo-300">
+                  Section history
+                </Link>
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === 'reports' && (
+        <Card title="Report cards" padded={false}>
+          {s.reportCards.length === 0 ? (
+            <EmptyState icon={<ScrollText className="h-7 w-7" aria-hidden />} title="No report cards yet" description="Generate them for the section under Report cards." action={<Link href="/report-cards" className="text-sm font-medium text-indigo-700 hover:underline dark:text-indigo-300">Go to report cards</Link>} />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Report</Th>
+                  <Th>Status</Th>
+                  <Th align="right">Percentage</Th>
+                  <Th>Grade</Th>
+                  <Th>Published</Th>
+                  <Th align="right">
+                    <span className="sr-only">Actions</span>
+                  </Th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.reportCards.map((r) => (
+                  <tr key={r.id}>
+                    <Td className="font-medium">{r.label}</Td>
+                    <Td>
+                      <ReportCardBadge status={r.status} />
+                    </Td>
+                    <Td align="right">{r.percentage === null ? '-' : `${Number(r.percentage).toFixed(1)}%`}</Td>
+                    <Td>{r.grade ?? '-'}</Td>
+                    <Td className="whitespace-nowrap">{r.publishedAt ? formatDateTime(r.publishedAt) : '-'}</Td>
+                    <Td align="right">
+                      <PdfButton path={`/documents/report-cards/${r.id}/pdf`} filename={`${s.admissionNumber}-${r.label}.pdf`} onError={(m) => flash.show('error', m)} />
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {tab === 'certificates' && (
+        <Card
+          title="Certificates"
+          padded={false}
+          actions={
+            active && (
+              <>
+                <Button size="sm" variant="secondary" onClick={() => setModal('bonafide')}>
+                  Issue bonafide
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setModal('tc')}>
+                  Issue TC
+                </Button>
+              </>
+            )
+          }
+        >
+          {s.certificates.length === 0 ? (
+            <EmptyState icon={<FileBadge className="h-7 w-7" aria-hidden />} title="No certificates issued" description="Bonafide and transfer certificates issued to this student are listed here." />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Type</Th>
+                  <Th>Number</Th>
+                  <Th>Issued</Th>
+                  <Th>Status</Th>
+                  <Th align="right">
+                    <span className="sr-only">Actions</span>
+                  </Th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.certificates.map((c) => (
+                  <tr key={c.id}>
+                    <Td className="whitespace-nowrap font-medium">{c.type === 'bonafide' ? 'Bonafide' : 'Transfer certificate'}</Td>
+                    <Td className="whitespace-nowrap tabular-nums">{c.number}</Td>
+                    <Td className="whitespace-nowrap">{formatDateTime(c.issuedAt)}</Td>
+                    <Td>
+                      <Badge tone={c.status === 'issued' ? 'green' : 'red'}>{titleCase(c.status)}</Badge>
+                    </Td>
+                    <Td align="right">
+                      <PdfButton path={`/documents/certificates/${c.id}/pdf`} filename={`${c.number.replace(/\//g, '-')}.pdf`} onError={(m) => flash.show('error', m)} />
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {tab === 'transport' && (
+        <Card
+          title="School transport"
+          actions={
+            active && (
+              <>
+                {s.transport && (
+                  <Button size="sm" variant="ghost" onClick={() => setModal('unbus')}>
+                    Remove
+                  </Button>
+                )}
+                <Button size="sm" variant="secondary" onClick={() => setModal('bus')}>
+                  {s.transport ? 'Change route / stop' : 'Assign to a route'}
+                </Button>
+              </>
+            )
+          }
+        >
+          {s.transport ? (
+            <DefinitionList
+              items={[
+                ['Route', <Link key="r" href="/transport" className="text-indigo-700 hover:underline dark:text-indigo-300">{s.transport.routeName}</Link>],
+                ['Stop', s.transport.stopName],
+                ['Pickup time', s.transport.pickupTime ? formatTime(s.transport.pickupTime) : null],
+              ]}
+            />
+          ) : (
+            <EmptyState icon={<Bus className="h-7 w-7" aria-hidden />} title="Does not use school transport" description="Assign a route and stop if the student takes the school bus." />
+          )}
+        </Card>
+      )}
+
+      <EditStudentModal
+        student={s}
+        sections={sections}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={(updated) => {
+          setEditing(false);
+          setData({ data: updated });
+          flash.show('success', 'Student details saved.');
+        }}
+      />
+      {modal === 'collect' && (
+        <CollectFeeModal
+          api={feesApi}
+          student={feeRow}
+          onClose={() => setModal(null)}
+          onCollected={(receipt) => {
+            flash.show(
+              'success',
+              <span>
+                Collected {formatInr(receipt.amount)}. Receipt {receipt.receiptNumber}.{' '}
+                <button type="button" className="font-medium underline" onClick={() => openPdf(`/finance/receipts/${receipt.id}/pdf`, `${receipt.receiptNumber}.pdf`).catch((e) => flash.show('error', errorText(e)))}>
+                  Print receipt
+                </button>
+              </span>,
+            );
+            reload();
+            setDuesKey((k) => k + 1);
+          }}
+        />
+      )}
+      <BonafideModal student={s} open={modal === 'bonafide'} onClose={() => setModal(null)} onIssued={() => reload()} />
+      <TcModal student={s} open={modal === 'tc'} onClose={() => setModal(null)} onIssued={() => reload()} />
+      <AssignModal
+        student={s}
+        open={modal === 'bus'}
+        currentRouteId={s.transport?.routeId}
+        currentStopName={s.transport?.stopName}
+        onClose={() => setModal(null)}
+        onSaved={(msg) => {
+          setModal(null);
+          flash.show('success', msg);
+          reload();
+        }}
+      />
+      <ConfirmModal open={modal === 'unbus'} title="Remove from transport?" confirmLabel="Remove" busy={busy} error={modalError} onConfirm={removeBus} onClose={() => setModal(null)}>
+        <p>
+          {s.name} will no longer be on {s.transport?.routeName}. Transport fees already billed are not changed.
+        </p>
+      </ConfirmModal>
+    </Page>
+  );
+}
+
+function PdfButton({ path, filename, onError }: { path: string; filename: string; onError: (msg: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      loading={busy}
+      icon={<FileDown className="h-3.5 w-3.5" aria-hidden />}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await openPdf(path, filename);
+        } catch (err) {
+          onError(errorText(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      View PDF
+    </Button>
+  );
+}
+
+function FeesTab({ studentId, reloadKey, canCollect, onCollect, admissionNumber }: { studentId: string; reloadKey: number; canCollect: boolean; onCollect: () => void; admissionNumber: string }) {
+  const { data, error, loading, reload } = useApi<Wrapped<StudentDues>>(`/fees/students/${studentId}/dues`);
+  useEffect(() => {
+    if (reloadKey > 0) reload();
+  }, [reloadKey, reload]);
+  const d = data?.data;
+  return (
+    <div className="space-y-6">
+      <Card
+        title="Open invoices"
+        padded={false}
+        actions={
+          <>
+            <Link href={`/fees?search=${encodeURIComponent(admissionNumber)}`} className="text-sm font-medium text-indigo-700 hover:underline dark:text-indigo-300">
+              Fee ledger
+            </Link>
+            {canCollect && (
+              <Button size="sm" icon={<Receipt className="h-3.5 w-3.5" aria-hidden />} onClick={onCollect}>
+                Collect fee
+              </Button>
+            )}
+          </>
+        }
+      >
+        {loading && !d ? (
+          <Spinner />
+        ) : error ? (
+          <ErrorState message={error} onRetry={reload} />
+        ) : !d?.openInvoices.length ? (
+          <EmptyState title="No open invoices" description={d && toPaise(d.notYetInvoiced.amount) > 0 ? 'Upcoming instalments are listed below.' : 'Nothing is due right now.'} />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Invoice</Th>
+                <Th>Period</Th>
+                <Th>Due date</Th>
+                <Th align="right">Amount</Th>
+                <Th align="right">Paid</Th>
+                <Th align="right">Balance</Th>
+                <Th>Status</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.openInvoices.map((inv) => {
+                const overdue = inv.dueDate < new Date().toISOString().slice(0, 10);
+                return (
+                  <tr key={inv.id}>
+                    <Td className="whitespace-nowrap font-medium tabular-nums">{inv.invoiceNumber}</Td>
+                    <Td className="whitespace-nowrap">{inv.periodLabel ?? inv.feeHeads ?? '-'}</Td>
+                    <Td className="whitespace-nowrap">{formatDate(inv.dueDate)}</Td>
+                    <Td align="right">{formatInr(inv.netAmount)}</Td>
+                    <Td align="right">{formatInr(inv.paidAmount)}</Td>
+                    <Td align="right" className="font-semibold">
+                      {formatInr(inv.balanceAmount)}
+                    </Td>
+                    <Td>
+                      <Badge tone={overdue ? 'red' : inv.status === 'partially_paid' ? 'amber' : 'gray'}>{overdue ? 'Overdue' : titleCase(inv.status)}</Badge>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+      {d && d.notYetInvoiced.allocations.length > 0 && (
+        <Card title={`Upcoming instalments · ${formatInr(d.notYetInvoiced.amount)}`} padded={false}>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Fee head</Th>
+                <Th align="right">Instalment</Th>
+                <Th>Due date</Th>
+                <Th align="right">Amount</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.notYetInvoiced.allocations.map((a) => (
+                <tr key={a.id}>
+                  <Td>{a.feeHead}</Td>
+                  <Td align="right">{a.installmentNo}</Td>
+                  <Td className="whitespace-nowrap">{formatDate(a.dueDate)}</Td>
+                  <Td align="right">{formatInr(a.netAmount)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
+    </div>
+  );
+}

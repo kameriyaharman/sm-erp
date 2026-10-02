@@ -1,6 +1,7 @@
 'use client';
 
-import { useId, useMemo, useState, type ComponentType, type SVGProps } from 'react';
+import Link from 'next/link';
+import { useId, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -72,6 +73,10 @@ export interface DashboardOverviewProps {
   onExport?: () => void;
   onRemind?: (studentId: string) => void;
   onViewAllDefaulters?: () => void;
+  /** Link for a defaulter's name (e.g. the student profile). */
+  studentHref?: (studentId: string) => string;
+  /** Extra content between the header and the KPI strip (quick actions, today's attendance). */
+  children?: ReactNode;
 }
 
 /* ============================================================================
@@ -188,9 +193,11 @@ export default function DashboardOverview({
   onExport,
   onRemind,
   onViewAllDefaulters,
+  studentHref,
+  children,
 }: DashboardOverviewProps) {
   return (
-    <main className="min-h-full bg-slate-50 px-8 py-8 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+    <main className="min-h-full bg-slate-50 px-4 py-6 sm:px-8 sm:py-8 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6">
         {/* Header */}
         <header className="flex flex-wrap items-end justify-between gap-4">
@@ -220,6 +227,8 @@ export default function DashboardOverview({
           </div>
         </header>
 
+        {children}
+
         {/* KPI strip: one surface, four measures */}
         <section aria-label="Key figures" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <dl className="grid grid-cols-2 divide-slate-200 xl:grid-cols-4 xl:divide-x dark:divide-slate-800 [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(-n+2)]:border-slate-200 xl:[&>*:nth-child(-n+2)]:border-b-0 dark:[&>*:nth-child(-n+2)]:border-slate-800">
@@ -231,11 +240,12 @@ export default function DashboardOverview({
 
         {/* Detail */}
         <div className="grid grid-cols-12 gap-6">
-          <CollectionExpenseCard finance={finance} academicYear={academicYear} className="col-span-12 xl:col-span-7" />
+          <CollectionExpenseCard finance={finance} academicYear={academicYear} className="col-span-12 xl:col-span-7 xl:self-start" />
           <DefaultersCard
             defaulters={defaulters}
             total={defaultersTotal}
             onRemind={onRemind}
+            studentHref={studentHref}
             onViewAll={onViewAllDefaulters}
             className="col-span-12 xl:col-span-5"
           />
@@ -306,7 +316,7 @@ function Sparkline({ points }: { points: number[] }) {
   const [lx, ly] = coords[coords.length - 1];
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="shrink-0 overflow-visible" aria-hidden>
+    <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="hidden shrink-0 overflow-visible sm:block" aria-hidden>
       <path d={area} className="fill-slate-100 dark:fill-slate-800/70" />
       <path d={line} fill="none" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" className="stroke-slate-400 dark:stroke-slate-500" />
       <circle cx={lx} cy={ly} r={3} strokeWidth={2} className="fill-[#2a78d6] stroke-white dark:fill-[#3987e5] dark:stroke-slate-900" />
@@ -324,9 +334,13 @@ const SERIES = [
   { key: 'expense', label: 'Expense', swatch: 'bg-[#eb6834] dark:bg-[#d95926]', fill: 'fill-[#eb6834] dark:fill-[#d95926]' },
 ] as const;
 
+/** Rounds the axis maximum up to 4 even gridlines on a 1 / 2 / 2.5 / 5 x 10^n step. */
 function niceMax(value: number): number {
-  const step = 2_500_000; // ₹25L gridlines
-  return Math.max(step, Math.ceil(value / step) * step);
+  if (!(value > 0)) return 100_000;
+  const raw = value / 4;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw) ?? 10 * pow;
+  return step * 4;
 }
 
 function CollectionExpenseCard({
@@ -595,12 +609,14 @@ function DefaultersCard({
   total,
   onRemind,
   onViewAll,
+  studentHref,
   className = '',
 }: {
   defaulters: Defaulter[];
   total: { count: number; amount: number };
   onRemind?: (studentId: string) => void;
   onViewAll?: () => void;
+  studentHref?: (studentId: string) => string;
   className?: string;
 }) {
   const titleId = useId();
@@ -645,7 +661,15 @@ function DefaultersCard({
               <li key={d.studentId} className="group flex items-center gap-4 px-6 py-3.5 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                 <Initials name={d.studentName} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{d.studentName}</p>
+                  <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {studentHref ? (
+                      <Link href={studentHref(d.studentId)} className="hover:underline">
+                        {d.studentName}
+                      </Link>
+                    ) : (
+                      d.studentName
+                    )}
+                  </p>
                   <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                     {classLabel}
                     <span className="mx-1.5 text-slate-300 dark:text-slate-600" aria-hidden>/</span>
@@ -670,15 +694,15 @@ function DefaultersCard({
                     </span>
                   </span>
                 </div>
-                <button
+                {onRemind && <button
                   type="button"
-                  onClick={() => onRemind?.(d.studentId)}
+                  onClick={() => onRemind(d.studentId)}
                   aria-label={`Send fee reminder to ${d.studentName}'s parent`}
                   title="Send reminder"
                   className="rounded-md p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-white dark:focus-visible:ring-slate-300"
                 >
                   <BellRing className="h-4 w-4" aria-hidden />
-                </button>
+                </button>}
               </li>
             );
           })}
