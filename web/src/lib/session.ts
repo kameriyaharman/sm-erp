@@ -18,6 +18,8 @@ export interface SessionUser {
   username: string | null;
   firstName: string;
   lastName: string | null;
+  schoolName?: string | null;
+  branchName?: string | null;
 }
 
 export const API_BASE = '/api/v1';
@@ -175,6 +177,68 @@ export const ROLE_LABEL: Record<Role, string> = {
   parent: 'Parent',
   student: 'Student',
 };
+
+/** Error from an API call; `details` carries field errors for forms (VALIDATION_ERROR). */
+export class ApiError extends AuthError {
+  constructor(code: string, message: string, status: number, public details?: Record<string, string[] | undefined>) {
+    super(code, message, status);
+  }
+}
+
+/** Authenticated POST / PUT / PATCH / DELETE with a JSON body. Returns the parsed JSON (or null for 204). */
+export async function apiSend<T = unknown>(
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new ApiError('UNAUTHENTICATED', 'Your session has ended. Please sign in again.', 401);
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, ...(body !== undefined && { 'Content-Type': 'application/json' }), ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (res.status === 204) return null as T;
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    const details = payload?.error?.details;
+    const firstField = details && typeof details === 'object' ? Object.values(details as Record<string, string[]>).flat().find(Boolean) : null;
+    const message = payload?.error?.code === 'VALIDATION_ERROR' && firstField ? String(firstField) : payload?.error?.message ?? `Request failed (${res.status})`;
+    throw new ApiError(payload?.error?.code ?? 'HTTP_ERROR', message, res.status, details);
+  }
+  return payload as T;
+}
+
+/**
+ * Opens an authenticated PDF (report card, receipt, certificate) in a new tab.
+ * The tab is opened synchronously so popup blockers allow it, then pointed at the blob.
+ */
+export async function openPdf(path: string, filename = 'document.pdf'): Promise<void> {
+  const win = typeof window !== 'undefined' ? window.open('', '_blank') : null;
+  try {
+    const token = await getAccessToken();
+    if (!token) throw new ApiError('UNAUTHENTICATED', 'Your session has ended. Please sign in again.', 401);
+    const res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/pdf' } });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      throw new ApiError(payload?.error?.code ?? 'HTTP_ERROR', payload?.error?.message ?? `Could not open the PDF (${res.status})`, res.status);
+    }
+    const url = URL.createObjectURL(await res.blob());
+    if (win) {
+      win.location.href = url;
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (err) {
+    win?.close();
+    throw err;
+  }
+}
 
 /** Authenticated JSON GET against the API. */
 export async function apiGet<T>(path: string): Promise<T> {
