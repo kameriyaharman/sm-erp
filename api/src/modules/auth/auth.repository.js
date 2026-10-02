@@ -50,8 +50,12 @@ export async function findSessionUser(userId) {
 
 export async function findPublicUser(userId) {
   const { rows } = await query(
-    `SELECT id, tenant_id, branch_id, role, email, username, first_name, last_name
-       FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    `SELECT u.id, u.tenant_id, u.branch_id, u.role, u.email, u.username, u.first_name, u.last_name,
+            t.name AS school_name, b.name AS branch_name
+       FROM users u
+       LEFT JOIN tenants t  ON t.id = u.tenant_id
+       LEFT JOIN branches b ON b.id = u.branch_id
+      WHERE u.id = $1 AND u.deleted_at IS NULL`,
     [userId],
   );
   return rows[0] ?? null;

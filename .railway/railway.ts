@@ -6,13 +6,14 @@
  * This file is the replacement. Railway does not read it during deploys; you preview and
  * apply it with the CLI:
  *
- *   npm i                    # installs the `railway` SDK (devDependency)
+ *   npm i                    # at the repo root: installs the `railway` SDK
  *   railway login && railway link
  *   railway config plan      # read-only diff; review it
  *   railway config apply     # asks for confirmation
  *
  * It is a named partial, so it only manages what it declares (api, Postgres, Redis) and
  * never deletes other services in the project.
+ * The services were first created from the dashboard/API; the first apply claims them.
  *
  * Secrets are NOT in this file: they are `preserve()`d. Create them in the Railway
  * dashboard first (Variables -> mark as sealed), then plan/apply.
@@ -34,11 +35,15 @@ export default defineRailway((ctx) => {
   const db = postgres("Postgres", { region: REGION });
   const cache = redis("Redis", { region: REGION });
 
+  // The API has no public domain: browsers and Razorpay reach it through the web service's
+  // /api/v1 proxy, over the private network (api.railway.internal:4000).
   const api = service("api", {
+    rootDirectory: "/api",
     build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
     deploy: {
-      // Migrations run between build and deploy; a failure stops the deploy (old version keeps serving).
-      preDeployCommand: ["node scripts/migrate.js"],
+      // Migrations (+ demo school when SEED_DEMO=true) run between build and deploy;
+      // a failure stops the deploy and the old version keeps serving.
+      preDeployCommand: ["npm run release"],
       healthcheckPath: "/health/ready",
       healthcheckTimeout: 120,
       restartPolicyType: "ON_FAILURE",
@@ -50,7 +55,9 @@ export default defineRailway((ctx) => {
     replicas: { [REGION]: prod ? 2 : 1 },
     env: {
       NODE_ENV: "production",
-      TRUST_PROXY: "1",
+      PORT: "4000",
+      // Two proxies in front of the API: Railway's edge, then the web service's rewrite.
+      TRUST_PROXY: "2",
       LOG_LEVEL: "info",
 
       // Private network (*.railway.internal): no public exposure, no SSL needed.
@@ -73,8 +80,27 @@ export default defineRailway((ctx) => {
       // Until an SMS/WhatsApp gateway is configured; "simulated" is refused in production.
       NOTIFY_SMS_PROVIDER: "none",
       NOTIFY_WHATSAPP_PROVIDER: "none",
+      SEED_DEMO: preserve(),                 // "true" creates the demo school once
+      DEMO_PASSWORD: preserve(),
     },
   });
 
-  return project("school-erp", { resources: [db, cache, api] });
+  const web = service("web", {
+    rootDirectory: "/web",
+    build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
+    deploy: {
+      healthcheckPath: "/login",
+      healthcheckTimeout: 120,
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 5,
+      drainingSeconds: 10,
+    },
+    replicas: { [REGION]: 1 },
+    env: {
+      // Read at build time by next.config.mjs (the /api/v1 rewrite).
+      API_INTERNAL_URL: "http://api.railway.internal:4000",
+    },
+  });
+
+  return project("school-erp", { resources: [db, cache, api, web] });
 });

@@ -330,7 +330,7 @@ Teacher, Principal, Parent on report cards) are left blank for wet signatures.
 ## Production on Railway
 
 Files: `Dockerfile` (multi-stage, prod dependencies only, non-root, tini as PID 1,
-`NODE_ENV=production`), `.dockerignore`, `.railway/railway.ts` (infrastructure as code) and
+`NODE_ENV=production`), `.dockerignore`, `../.railway/railway.ts` (infrastructure as code, at the repo root) and
 `scripts/migrate.js` (the pre-deploy step).
 
 Why there's no `railway.json`: Railway has deprecated Config as Code. New services can't use it,
@@ -339,7 +339,7 @@ the replacement. Railway does not read it on deploy; you apply it with the CLI:
 
 ```bash
 railway login && railway link      # project: school-erp, environment: production
-npm run railway:plan               # read-only diff
+npm run railway:plan               # read-only diff (run at the repo root)
 railway config apply               # asks before changing anything
 ```
 
@@ -352,7 +352,7 @@ create them in the dashboard as sealed variables first:
 `JWT_ACCESS_SECRET`, `CORS_ORIGINS`, `PARENT_PORTAL_URL`, `DOCUMENT_VERIFY_BASE_URL`,
 `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
 
-The file doesn't set a source for `api`: connect the GitHub repo in the dashboard (or `railway up`).
+Both services deploy from the GitHub repo `kameriyaharman/sm-erp` (root directories `/api` and `/web`). The API has no public domain: the web service proxies `/api/v1/*` to it over the private network, which also keeps the refresh cookie first-party. Hence `TRUST_PROXY=2` (Railway edge + web proxy).
 
 **Production guards** (the process exits with one JSON log line naming the bad variables, never their values):
 - `NODE_ENV` must be `production` in Railway's production environment.

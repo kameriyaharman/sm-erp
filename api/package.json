@@ -2,7 +2,7 @@
   "name": "sm-erp-api",
   "version": "0.1.0",
   "private": true,
-  "description": "SM ERP backend — auth, RBAC and finance APIs",
+  "description": "SM ERP backend \u2014 auth, RBAC and finance APIs",
   "type": "module",
   "main": "src/server.js",
   "engines": {
@@ -15,7 +15,7 @@
     "migrate:status": "node scripts/migrate.js --status",
     "test": "node --test test/*.test.js",
     "job:fee-reminders": "node scripts/run-fee-reminders.js",
-    "railway:plan": "railway config plan"
+    "release": "node scripts/migrate.js && node scripts/seed-demo.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -32,8 +32,5 @@
     "rate-limit-redis": "^6.0.1",
     "redis": "^6.3.0",
     "zod": "^3.24.1"
-  },
-  "devDependencies": {
-    "railway": "^3.12.0"
   }
 }

@@ -29,6 +29,7 @@ function toPublicUser(user) {
     username: user.username,
     firstName: user.first_name,
     lastName: user.last_name,
+    ...(user.school_name !== undefined && { schoolName: user.school_name, branchName: user.branch_name }),
   };
 }
 

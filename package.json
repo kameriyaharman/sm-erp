@@ -1,0 +1,12 @@
+{
+  "name": "sm-erp",
+  "private": true,
+  "description": "SM ERP monorepo: api/ and web/. This root only holds Railway infrastructure-as-code tooling.",
+  "scripts": {
+    "railway:plan": "railway config plan",
+    "railway:apply": "railway config apply"
+  },
+  "devDependencies": {
+    "railway": "3.12.0"
+  }
+}
