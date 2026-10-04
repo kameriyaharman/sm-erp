@@ -300,17 +300,18 @@ export function schoolFromRow(row) {
   return {
     name: s.schoolName ?? row.school_name,
     branchName: s.showBranchName === false ? null : row.branch_name,
-    board: s.board ?? 'CBSE, New Delhi',
+    // School profile columns (migration 011) win over the older settings.documents keys.
+    board: row.board ?? s.board ?? 'CBSE, New Delhi',
     affiliationNo: row.affiliation_no,
     schoolCode: row.school_code,
     udiseCode: row.udise_code,
     address: [row.address_line1, row.address_line2, [row.city, row.state].filter(Boolean).join(', '), row.postal_code].filter(Boolean).join(', '),
     phone: row.branch_phone,
     email: row.branch_email,
-    website: s.website,
+    website: row.website ?? s.website,
     logo: s.logo,
     secondaryLogo: s.secondaryLogo,
-    principalName: s.principalName,
+    principalName: row.principal_name ?? s.principalName,
     place: s.place ?? row.city,
     timeZone: row.timezone ?? 'Asia/Kolkata',
   };

@@ -53,6 +53,11 @@ export async function getStudent(db, studentId, { forUpdate = false } = {}) {
             sp.gender, sp.date_of_birth, sp.status, sp.date_of_leaving, sp.blood_group, sp.address,
             sp.class_id, sp.section_id, sp.academic_year_id, sp.parent_id,
             sp.father_name, sp.mother_name, sp.guardian_name, sp.social_category, sp.pen_number, sp.apaar_id,
+            sp.nationality, sp.mother_tongue, sp.previous_school, sp.aadhaar_number, sp.religion, sp.house, sp.identification_marks,
+            sp.father_phone, sp.father_email, sp.father_occupation, sp.mother_phone, sp.mother_email, sp.mother_occupation,
+            sp.guardian_relation, sp.guardian_phone, sp.emergency_contact_name, sp.emergency_contact_relation, sp.emergency_contact_phone,
+            sp.previous_school_board, sp.last_class_passed, sp.tc_number, sp.tc_date, sp.allergies, sp.medical_notes,
+            ph.updated_at AS photo_updated_at,
             u.first_name, u.last_name, concat_ws(' ', u.first_name, u.last_name) AS name,
             c.name AS class_name, s.name AS section_name,
             ay.id AS year_id, ay.name AS year_name,
@@ -64,6 +69,7 @@ export async function getStudent(db, studentId, { forUpdate = false } = {}) {
        LEFT JOIN academic_years ay ON ay.id = COALESCE(sp.academic_year_id,
                  (SELECT y.id FROM academic_years y WHERE y.branch_id = sp.branch_id AND y.is_current LIMIT 1))
        LEFT JOIN users pu   ON pu.id = sp.parent_id
+       LEFT JOIN student_photos ph ON ph.student_id = sp.id
       WHERE sp.id = $1 AND sp.deleted_at IS NULL
       ${forUpdate ? 'FOR UPDATE OF sp' : ''}`,
     [studentId],
@@ -266,27 +272,76 @@ export async function updateStudentUser(db, userId, { firstName, lastName }) {
   );
 }
 
-const PROFILE_COLUMNS = {
-  gender: 'gender',
-  dateOfBirth: 'date_of_birth',
-  sectionId: 'section_id',
-  rollNumber: 'roll_number',
-  fatherName: 'father_name',
-  motherName: 'mother_name',
-  guardianName: 'guardian_name',
-  socialCategory: 'social_category',
-  penNumber: 'pen_number',
-  apaarId: 'apaar_id',
-  parentId: 'parent_id',
-};
+/**
+ * student_profiles columns PATCH may write (keys are column names; values already validated
+ * and normalised by the service). Anything else is ignored.
+ */
+const PROFILE_COLUMNS = new Set([
+  'gender', 'date_of_birth', 'admission_date', 'academic_year_id', 'class_id', 'section_id', 'roll_number', 'parent_id',
+  'father_name', 'mother_name', 'guardian_name', 'social_category', 'pen_number', 'apaar_id',
+  'blood_group', 'aadhaar_number', 'religion', 'mother_tongue', 'nationality', 'house', 'identification_marks', 'address',
+  'father_phone', 'father_email', 'father_occupation', 'mother_phone', 'mother_email', 'mother_occupation',
+  'guardian_relation', 'guardian_phone', 'emergency_contact_name', 'emergency_contact_relation', 'emergency_contact_phone',
+  'previous_school', 'previous_school_board', 'last_class_passed', 'tc_number', 'tc_date', 'allergies', 'medical_notes',
+]);
 
 export async function updateStudentProfile(db, studentId, patch) {
-  const entries = Object.entries(patch).filter(([k, v]) => PROFILE_COLUMNS[k] && v !== undefined);
+  const entries = Object.entries(patch).filter(([k, v]) => PROFILE_COLUMNS.has(k) && v !== undefined);
   if (entries.length === 0) return;
-  const sets = entries.map(([k], i) => `${PROFILE_COLUMNS[k]} = $${i + 2}`);
+  const sets = entries.map(([k], i) => (k === 'address' ? `address = $${i + 2}::jsonb` : `${k} = $${i + 2}`));
   await db.query(`UPDATE student_profiles SET ${sets.join(', ')} WHERE id = $1`, [studentId, ...entries.map(([, v]) => v)]);
 }
 
 export async function updateUserPhone(db, userId, phone) {
   await db.query(`UPDATE users SET phone = $2 WHERE id = $1`, [userId, phone]);
+}
+
+/** Another live student of the tenant with this Aadhaar number (admission number), or null. */
+export async function aadhaarOwner(db, tenantId, aadhaar, exceptStudentId = null) {
+  const { rows } = await db.query(
+    `SELECT admission_number FROM student_profiles
+      WHERE tenant_id = $1 AND aadhaar_number = $2 AND deleted_at IS NULL AND ($3::uuid IS NULL OR id <> $3)
+      LIMIT 1`,
+    [tenantId, aadhaar, exceptStudentId],
+  );
+  return rows[0]?.admission_number ?? null;
+}
+
+/** Fee invoices of the student in a year that are not cancelled (class changes leave fees alone). */
+export async function countInvoices(db, studentId, academicYearId) {
+  const { rows } = await db.query(
+    `SELECT count(*)::int AS n FROM fee_invoices WHERE student_id = $1 AND academic_year_id = $2 AND status <> 'cancelled'`,
+    [studentId, academicYearId],
+  );
+  return rows[0].n;
+}
+
+// ---------------------------------------------------------------- photo
+
+export async function getPhoto(db, studentId) {
+  const { rows } = await db.query(`SELECT mime_type, size_bytes, sha256, data, updated_at FROM student_photos WHERE student_id = $1`, [studentId]);
+  return rows[0] ?? null;
+}
+
+export async function upsertPhoto(db, p) {
+  const { rows } = await db.query(
+    `INSERT INTO student_photos (student_id, tenant_id, branch_id, mime_type, size_bytes, sha256, data, uploaded_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (student_id) DO UPDATE
+        SET mime_type = EXCLUDED.mime_type, size_bytes = EXCLUDED.size_bytes, sha256 = EXCLUDED.sha256,
+            data = EXCLUDED.data, uploaded_by = EXCLUDED.uploaded_by
+     RETURNING updated_at`,
+    [p.studentId, p.tenantId, p.branchId, p.mime, p.size, p.sha256, p.data, p.uploadedBy],
+  );
+  return rows[0].updated_at;
+}
+
+export async function deletePhoto(db, studentId) {
+  const { rowCount } = await db.query(`DELETE FROM student_photos WHERE student_id = $1`, [studentId]);
+  return rowCount > 0;
+}
+
+export async function getAadhaar(db, studentId) {
+  const { rows } = await db.query(`SELECT tenant_id, branch_id, aadhaar_number, admission_number FROM student_profiles WHERE id = $1 AND deleted_at IS NULL`, [studentId]);
+  return rows[0] ?? null;
 }

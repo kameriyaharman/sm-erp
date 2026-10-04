@@ -79,6 +79,13 @@ export function currentUser(): SessionUser | null {
   return memory?.user ?? read<SessionUser>(USER_KEY);
 }
 
+/** Updates the signed-in user's cached details (e.g. after "My account" changes the name). */
+export function updateSessionUser(patch: Partial<Pick<SessionUser, 'firstName' | 'lastName'>>): void {
+  const user = currentUser();
+  const token = memory?.token ?? read<string>(TOKEN_KEY);
+  if (user && token) store(token, { ...user, ...patch });
+}
+
 async function postJson(path: string, body: unknown) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',

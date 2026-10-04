@@ -268,6 +268,7 @@ export async function getReportCardDocument(auth, id) {
 
   return {
     ...card.snapshot,
+    branchId: card.branch_id,
     status: card.status,
     result: card.result,
     remarks: { teacher: card.teacher_remarks, principal: card.principal_remarks },
@@ -494,6 +495,7 @@ export async function getCertificateDocument(auth, id, { copy } = {}) {
     return {
       copyLabel,
       cert: {
+        branchId: cert.branch_id,
         type: cert.certificate_type, number: cert.certificate_number, verificationCode: cert.verification_code, status: cert.status,
         issuedAt: cert.issued_at, cancelledAt: cert.cancelled_at, cancelReason: cert.cancel_reason, content: cert.content,
       },

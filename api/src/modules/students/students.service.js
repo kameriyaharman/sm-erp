@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
 import { logger } from '../../utils/logger.js';
@@ -10,6 +10,8 @@ import {
 } from '../shared/access.js';
 import { hasSection } from '../shared/teacher-scope.helpers.js';
 import { attendanceStats, likePattern, nextRollNumber, nextSequenceCode, splitName } from '../shared/school-ops.helpers.js';
+import { addressOut, checkImage, maskAadhaar, MAX_PHOTO_BYTES } from '../setup/profile.helpers.js';
+import { profileColumns } from './student-profile.js';
 import * as repo from './students.repository.js';
 
 const BCRYPT_COST = 12;
@@ -23,6 +25,14 @@ function parsePhone(input, field) {
     return { e164, national: e164.slice(3) };
   } catch (err) {
     throw invalid(field, err.message);
+  }
+}
+
+async function assertAadhaarFree(db, tenantId, aadhaar, exceptStudentId = null) {
+  if (!aadhaar) return;
+  const owner = await repo.aadhaarOwner(db, tenantId, aadhaar, exceptStudentId);
+  if (owner) {
+    throw conflict('AADHAAR_TAKEN', `This Aadhaar number is already recorded for student ${owner}`, { admissionNumber: owner });
   }
 }
 
@@ -69,7 +79,6 @@ async function buildDetail(db, s) {
     repo.reportCardsFor(db, s.id),
     repo.certificatesFor(db, s.id),
   ]);
-  const address = s.address && Object.keys(s.address).length > 0 ? s.address : null;
   return {
     id: s.id,
     name: s.name,
@@ -83,7 +92,14 @@ async function buildDetail(db, s) {
     status: s.status,
     dateOfLeaving: s.date_of_leaving,
     bloodGroup: s.blood_group,
-    address,
+    address: addressOut(s.address),
+    aadhaarMasked: maskAadhaar(s.aadhaar_number),
+    religion: s.religion,
+    motherTongue: s.mother_tongue,
+    nationality: s.nationality,
+    house: s.house,
+    identificationMarks: s.identification_marks,
+    photo: s.photo_updated_at ? { url: `/students/${s.id}/photo`, updatedAt: s.photo_updated_at } : null,
     class: s.class_id ? { id: s.class_id, name: s.class_name } : null,
     section: s.section_id ? { id: s.section_id, name: s.section_name } : null,
     academicYear: s.year_id ? { id: s.year_id, name: s.year_name } : null,
@@ -93,6 +109,16 @@ async function buildDetail(db, s) {
     socialCategory: s.social_category,
     penNumber: s.pen_number,
     apaarId: s.apaar_id,
+    father: { name: s.father_name, phone: s.father_phone, email: s.father_email, occupation: s.father_occupation },
+    mother: { name: s.mother_name, phone: s.mother_phone, email: s.mother_email, occupation: s.mother_occupation },
+    guardian: { name: s.guardian_name, relation: s.guardian_relation, phone: s.guardian_phone },
+    emergencyContact: s.emergency_contact_name || s.emergency_contact_phone
+      ? { name: s.emergency_contact_name, relation: s.emergency_contact_relation, phone: s.emergency_contact_phone }
+      : null,
+    previousSchool: s.previous_school || s.last_class_passed || s.tc_number
+      ? { name: s.previous_school, board: s.previous_school_board, lastClassPassed: s.last_class_passed, tcNumber: s.tc_number, tcDate: s.tc_date }
+      : null,
+    medical: { bloodGroup: s.blood_group, allergies: s.allergies, notes: s.medical_notes },
     parent: s.parent_user_id ? { userId: s.parent_user_id, name: s.parent_name, phone: s.parent_phone, email: s.parent_email } : null,
     fees,
     attendance: attendanceStats(counts),
@@ -132,6 +158,7 @@ export async function getStudent(auth, studentId) {
 
 export async function admitStudent(auth, input) {
   const parentPhone = parsePhone(input.parent.phone, 'parent');
+  const extra = profileColumns(input);
   // bcrypt is slow on purpose: hash before taking locks.
   const [studentHash, parentHash] = await Promise.all([
     bcrypt.hash(randomUUID(), BCRYPT_COST),
@@ -151,6 +178,7 @@ export async function admitStudent(auth, input) {
     if (input.dateOfBirth >= admissionDate) throw invalid('dateOfBirth', 'Date of birth must be before the admission date');
 
     await repo.lockBranchAdmissions(db, section.branch_id);
+    await assertAadhaarFree(db, section.tenant_id, extra.aadhaar_number);
 
     let admissionNumber = input.admissionNumber;
     if (admissionNumber) {
@@ -212,10 +240,11 @@ export async function admitStudent(auth, input) {
       parentId,
       dateOfBirth: input.dateOfBirth,
       gender: input.gender,
-      fatherName: input.fatherName,
-      motherName: input.motherName,
+      fatherName: extra.father_name,
+      motherName: extra.mother_name,
       socialCategory: input.socialCategory,
     });
+    await repo.updateStudentProfile(db, studentId, extra);
 
     const allocations = input.applyFeeStructure
       ? await repo.allocateFeeStructure(db, {
@@ -247,36 +276,49 @@ export async function admitStudent(auth, input) {
 
 export async function updateStudent(auth, studentId, patch) {
   const parentPhone = patch.parentPhone ? parsePhone(patch.parentPhone, 'parentPhone') : null;
+  const profile = profileColumns(patch);
+  const warnings = [];
 
   const tenantId = await withTransaction(async (db) => {
     const s = await repo.getStudent(db, studentId, { forUpdate: true });
     assertStaffAccess(auth, s, 'Student not found', 'STUDENT_NOT_FOUND');
 
-    const profile = {
-      gender: patch.gender,
-      dateOfBirth: patch.dateOfBirth,
-      fatherName: patch.fatherName,
-      motherName: patch.motherName,
-      guardianName: patch.guardianName,
-      socialCategory: patch.socialCategory,
-      penNumber: patch.penNumber,
-      apaarId: patch.apaarId,
-    };
+    if (patch.gender !== undefined) profile.gender = patch.gender;
+    if (patch.dateOfBirth !== undefined) profile.date_of_birth = patch.dateOfBirth;
+    if (patch.admissionDate !== undefined) profile.admission_date = patch.admissionDate;
+    await assertAadhaarFree(db, s.tenant_id, profile.aadhaar_number, s.id);
 
-    const targetSection = patch.sectionId ?? s.section_id;
-    if (patch.sectionId && patch.sectionId !== s.section_id) {
+    const classChange = Boolean(patch.classId && patch.classId !== s.class_id);
+    const sectionChange = Boolean(patch.sectionId && patch.sectionId !== s.section_id);
+    let targetSection = s.section_id;
+    if (classChange || sectionChange) {
       const section = await repo.getSectionForAdmission(db, patch.sectionId);
       if (!section || section.branch_id !== s.branch_id) throw AppError.notFound('Section not found', 'SECTION_NOT_FOUND');
-      if (section.class_id !== s.class_id || section.academic_year_id !== s.academic_year_id) {
-        throw unprocessable('SECTION_NOT_IN_CLASS', 'A student can only move to another section of the same class and year');
+      if (section.class_id !== (patch.classId ?? s.class_id)) {
+        throw unprocessable('SECTION_NOT_IN_CLASS', 'The section does not belong to the selected class', { sectionId: patch.sectionId });
+      }
+      if (s.academic_year_id ? section.academic_year_id !== s.academic_year_id : !section.is_current) {
+        throw unprocessable('SECTION_NOT_IN_YEAR', 'A student can only move to a section of the same academic year. Use promotion to move to the next year.');
       }
       await repo.lockBranchAdmissions(db, s.branch_id);
-      profile.sectionId = patch.sectionId;
+      profile.section_id = section.id;
+      profile.class_id = section.class_id;
+      if (!s.academic_year_id) profile.academic_year_id = section.academic_year_id;
+      targetSection = section.id;
       // Keep the roll number if it is free in the new section, else take the next one.
       if (!patch.rollNumber) {
-        profile.rollNumber = s.roll_number && !(await repo.rollTaken(db, patch.sectionId, s.roll_number, s.id))
+        profile.roll_number = s.roll_number && !(await repo.rollTaken(db, section.id, s.roll_number, s.id))
           ? s.roll_number
-          : nextRollNumber(await repo.sectionRolls(db, patch.sectionId));
+          : nextRollNumber(await repo.sectionRolls(db, section.id));
+      }
+      if (section.class_id !== s.class_id && s.academic_year_id) {
+        const invoices = await repo.countInvoices(db, s.id, s.academic_year_id);
+        warnings.push({
+          code: 'FEES_NOT_CHANGED',
+          message: invoices > 0
+            ? `Class changed. The ${invoices} fee invoice${invoices === 1 ? '' : 's'} already raised this year are unchanged; adjust them in Fees if the new class pays a different fee.`
+            : 'Class changed. The fee instalments from the old class are unchanged; adjust them in Fees if the new class pays a different fee.',
+        });
       }
     }
     if (patch.rollNumber) {
@@ -284,19 +326,23 @@ export async function updateStudent(auth, studentId, patch) {
       if (await repo.rollTaken(db, targetSection, patch.rollNumber, s.id)) {
         throw conflict('ROLL_NUMBER_TAKEN', `Roll number ${patch.rollNumber} is already used in this section`, { rollNumber: patch.rollNumber });
       }
-      profile.rollNumber = patch.rollNumber;
+      profile.roll_number = patch.rollNumber;
     }
 
     if (parentPhone) {
       // Link to the family account with this mobile; otherwise update the linked parent's mobile.
       const existing = await repo.findParentByPhone(db, s.tenant_id, parentPhone.national);
-      if (existing) profile.parentId = existing;
+      if (existing) profile.parent_id = existing;
       else if (s.parent_user_id) await repo.updateUserPhone(db, s.parent_user_id, parentPhone.e164);
       else throw unprocessable('PARENT_NOT_FOUND', 'No parent account has this mobile number. Admit the student with parent details first.');
     }
 
     const dob = patch.dateOfBirth ?? s.date_of_birth;
-    if (dob >= s.admission_date) throw invalid('dateOfBirth', 'Date of birth must be before the admission date');
+    const admitted = patch.admissionDate ?? s.admission_date;
+    if (dob >= admitted) throw invalid('dateOfBirth', 'Date of birth must be before the admission date');
+    if (s.date_of_leaving && patch.admissionDate && patch.admissionDate > s.date_of_leaving) {
+      throw invalid('admissionDate', 'Admission date must be before the date of leaving');
+    }
 
     if (patch.firstName !== undefined || patch.lastName !== undefined) {
       await repo.updateStudentUser(db, s.user_id, { firstName: patch.firstName, lastName: patch.lastName });
@@ -305,5 +351,54 @@ export async function updateStudent(auth, studentId, patch) {
     return s.tenant_id;
   });
 
-  return { detail: await buildDetail(pool, await repo.getStudent(pool, studentId)), tenantId };
+  return { detail: await buildDetail(pool, await repo.getStudent(pool, studentId)), tenantId, warnings };
+}
+
+// =====================================================================
+// Photo and Aadhaar
+// =====================================================================
+
+/** Staff who may see the student (teachers: their sections) may see the photo. */
+export async function getPhoto(auth, studentId) {
+  await getStudentForRead(auth, studentId);
+  const photo = await repo.getPhoto(pool, studentId);
+  if (!photo) throw AppError.notFound('This student has no photo', 'PHOTO_NOT_FOUND');
+  return photo;
+}
+
+async function getStudentForRead(auth, studentId) {
+  const s = await repo.getStudent(pool, studentId);
+  assertStaffAccess(auth, s, 'Student not found', 'STUDENT_NOT_FOUND');
+  if (auth.role === ROLES.TEACHER && !(s.section_id && hasSection(await loadTeacherScope(pool, auth), s.section_id))) {
+    throw notAssigned('This student is not in one of your classes');
+  }
+  return s;
+}
+
+export async function putPhoto(auth, studentId, file) {
+  const s = await repo.getStudent(pool, studentId);
+  assertStaffAccess(auth, s, 'Student not found', 'STUDENT_NOT_FOUND');
+  const check = checkImage(file, { kinds: ['jpeg', 'png', 'webp'], maxBytes: MAX_PHOTO_BYTES, label: 'Photo' });
+  if (!check.ok) throw new AppError(check.status, check.code, check.message);
+  const sha256 = createHash('sha256').update(file.buffer).digest('hex');
+  const updatedAt = await repo.upsertPhoto(pool, {
+    studentId, tenantId: s.tenant_id, branchId: s.branch_id, mime: check.mime, size: file.buffer.length, sha256, data: file.buffer, uploadedBy: auth.userId,
+  });
+  logger.info('Student photo saved', { studentId, bytes: file.buffer.length, by: auth.userId });
+  return { url: `/students/${studentId}/photo`, updatedAt, mimeType: check.mime, sizeBytes: file.buffer.length };
+}
+
+export async function deletePhoto(auth, studentId) {
+  const s = await repo.getStudent(pool, studentId);
+  assertStaffAccess(auth, s, 'Student not found', 'STUDENT_NOT_FOUND');
+  if (!(await repo.deletePhoto(pool, studentId))) throw AppError.notFound('This student has no photo', 'PHOTO_NOT_FOUND');
+}
+
+/** Full Aadhaar for the school office (ADMINS). Every reveal is logged. */
+export async function revealAadhaar(auth, studentId) {
+  const s = await repo.getAadhaar(pool, studentId);
+  assertStaffAccess(auth, s, 'Student not found', 'STUDENT_NOT_FOUND');
+  logger.info('Aadhaar revealed', { studentId, admissionNumber: s.admission_number, by: auth.userId, role: auth.role });
+  const n = s.aadhaar_number;
+  return { aadhaarNumber: n ? `${n.slice(0, 4)} ${n.slice(4, 8)} ${n.slice(8)}` : null };
 }

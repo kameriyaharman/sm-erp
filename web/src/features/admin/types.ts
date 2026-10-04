@@ -79,6 +79,20 @@ export interface StudentRow {
   parent: { name: string; phone: string | null } | null;
 }
 
+export interface StudentAddress {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+}
+export interface ParentInfo {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  occupation: string | null;
+}
+
 export interface StudentDetail {
   id: string;
   name: string;
@@ -92,7 +106,15 @@ export interface StudentDetail {
   status: StudentStatus;
   dateOfLeaving: string | null;
   bloodGroup: string | null;
-  address: string | null;
+  address: StudentAddress | null;
+  /** Always masked ("XXXX-XXXX-1234"); GET /students/:id/aadhaar reveals it (admins). */
+  aadhaarMasked: string | null;
+  religion: string | null;
+  motherTongue: string | null;
+  nationality: string | null;
+  house: string | null;
+  identificationMarks: string | null;
+  photo: { url: string; updatedAt: string } | null;
   class: Ref | null;
   section: Ref | null;
   academicYear: Ref | null;
@@ -102,6 +124,12 @@ export interface StudentDetail {
   socialCategory: SocialCategory | null;
   penNumber: string | null;
   apaarId: string | null;
+  father: ParentInfo;
+  mother: ParentInfo;
+  guardian: { name: string | null; relation: string | null; phone: string | null };
+  emergencyContact: { name: string | null; relation: string | null; phone: string | null } | null;
+  previousSchool: { name: string | null; board: string | null; lastClassPassed: string | null; tcNumber: string | null; tcDate: string | null } | null;
+  medical: { bloodGroup: string | null; allergies: string | null; notes: string | null };
   parent: { userId: string; name: string; phone: string | null; email: string | null } | null;
   fees: { totalFee: Money; paid: Money; pending: Money; overdue: Money };
   attendance: { workingDays: number; present: number; absent: number; late: number; leave: number; halfDay: number; percentage: number | null };

@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, LogOut } from 'lucide-react';
+import { ChevronDown, LogOut, UserRound } from 'lucide-react';
 import { ROLE_LABEL, type SessionUser } from '@/lib/session';
 
 /** Avatar button in the top bar with the signed-in person's details and Sign out. */
@@ -68,6 +69,17 @@ export default function UserMenu({
             )}
           </div>
           <div className="p-1.5">
+            {(user.role === 'super_admin' || user.role === 'branch_admin' || user.role === 'teacher') && (
+              <Link
+                href="/settings/account"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/5"
+              >
+                <UserRound className="h-4 w-4 text-slate-400" aria-hidden />
+                My account
+              </Link>
+            )}
             <button
               type="button"
               role="menuitem"

@@ -4,17 +4,17 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Bus, FileBadge, FileDown, IndianRupee, Pencil, Receipt, ScrollText } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Notice, Page, PageHeader, Spinner, Stat, Table, Tabs, Td, Th } from '@/components/ui';
+import { Badge, Button, buttonClass, Card, EmptyState, ErrorState, Notice, Page, PageHeader, Spinner, Stat, Table, Tabs, Td, Th } from '@/components/ui';
 import { useApi } from '@/lib/useApi';
 import { API_BASE, apiSend, getAccessToken, openPdf } from '@/lib/session';
 import { formatDate, formatDateTime, formatInr, formatTime, titleCase } from '@/lib/format';
 import CollectFeeModal from '@/features/fees/CollectFeeModal';
 import { createFeesApi, type StudentDues, type StudentFeeRow } from '@/features/fees/api';
 import { toPaise } from '@/features/fees/format';
-import { Avatar, ConfirmModal, DefinitionList, PhoneLink, ReportCardBadge, StudentStatusBadge, errorText, useClasses, useFlash } from '../shared';
+import { ConfirmModal, DefinitionList, ReportCardBadge, StudentStatusBadge, errorText, useFlash } from '../shared';
 import { BonafideModal, TcModal } from '../certificates/IssueModals';
 import AssignModal from '../transport/AssignModal';
-import EditStudentModal from './EditStudentModal';
+import StudentOverview, { StudentPhoto, Tel } from '@/features/setup/StudentOverview';
 import type { StudentDetail, Wrapped } from '../types';
 
 type Tab = 'overview' | 'fees' | 'attendance' | 'reports' | 'certificates' | 'transport';
@@ -23,10 +23,8 @@ export default function StudentProfile() {
   const { id } = useParams<{ id: string }>();
   const params = useSearchParams();
   const { data, error, loading, reload, setData } = useApi<Wrapped<StudentDetail>>(`/students/${id}`);
-  const { sections } = useClasses();
   const flash = useFlash();
   const [tab, setTab] = useState<Tab>('overview');
-  const [editing, setEditing] = useState(false);
   const [modal, setModal] = useState<null | 'collect' | 'bonafide' | 'tc' | 'bus' | 'unbus'>(null);
   const [busy, setBusy] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -93,9 +91,10 @@ export default function StudentProfile() {
         }
         actions={
           <>
-            <Button variant="secondary" icon={<Pencil className="h-4 w-4" aria-hidden />} onClick={() => setEditing(true)}>
+            <Link href={`/students/${s.id}/edit`} className={buttonClass({ variant: 'secondary' })}>
+              <Pencil className="h-4 w-4" aria-hidden />
               Edit
-            </Button>
+            </Link>
             {active && (
               <Button icon={<IndianRupee className="h-4 w-4" aria-hidden />} onClick={() => setModal('collect')}>
                 Collect fee
@@ -111,18 +110,28 @@ export default function StudentProfile() {
           </Notice>
         </div>
       )}
+      {params.get('saved') === '1' && !flash.flash && (
+        <div className="mb-4">
+          <Notice tone="success">Student details saved.</Notice>
+        </div>
+      )}
+      {params.get('warn') && (
+        <div className="mb-4">
+          <Notice tone="warn">{params.get('warn')}</Notice>
+        </div>
+      )}
       {flash.node}
 
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-line bg-surface p-4">
-        <Avatar name={s.name} size="lg" />
-        <div className="min-w-0 flex-1">
-          <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Parent</p>
+      <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-4 rounded-xl border border-line bg-surface p-4">
+        <StudentPhoto student={s} size="xl" />
+        <div className="min-w-0 flex-1 basis-56">
+          <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Parent (login and SMS)</p>
           {s.parent ? (
-            <p className="flex flex-wrap items-center gap-x-3 text-sm">
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <span className="font-medium">{s.parent.name}</span>
-              <PhoneLink phone={s.parent.phone} />
+              <Tel phone={s.parent.phone} />
               {s.parent.email && (
-                <a href={`mailto:${s.parent.email}`} className="text-indigo-700 hover:underline dark:text-indigo-300">
+                <a href={`mailto:${s.parent.email}`} className="truncate text-indigo-700 hover:underline dark:text-indigo-300">
                   {s.parent.email}
                 </a>
               )}
@@ -130,11 +139,25 @@ export default function StudentProfile() {
           ) : (
             <p className="text-sm text-slate-500">No parent linked</p>
           )}
+          {s.address && (
+            <p className="mt-2 truncate text-13 text-slate-500 dark:text-slate-400" title={[s.address.line1, s.address.line2, s.address.city].filter(Boolean).join(', ')}>
+              {[s.address.line2 ?? s.address.line1, s.address.city].filter(Boolean).join(', ')}
+            </p>
+          )}
         </div>
+        {(s.medical?.allergies || s.medical?.bloodGroup) && (
+          <div className="text-sm">
+            <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Health</p>
+            <p className="mt-0.5">
+              {s.medical.bloodGroup && <span className="font-medium">{s.medical.bloodGroup}</span>}
+              {s.medical.allergies && <span className="ml-2 text-red-700 dark:text-red-300">Allergy: {s.medical.allergies}</span>}
+            </p>
+          </div>
+        )}
         {s.transport && (
           <div className="text-sm">
             <p className="text-13 font-medium text-slate-500 dark:text-slate-400">Bus</p>
-            <p>
+            <p className="mt-0.5">
               {s.transport.routeName}, {s.transport.stopName}
             </p>
           </div>
@@ -166,40 +189,7 @@ export default function StudentProfile() {
         ]}
       />
 
-      {tab === 'overview' && (
-        <Card
-          title="Personal details"
-          actions={
-            <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" aria-hidden />} onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-          }
-        >
-          <DefinitionList
-            items={[
-              ['First name', s.firstName],
-              ['Last name', s.lastName],
-              ['Gender', titleCase(s.gender)],
-              ['Date of birth', s.dateOfBirth ? formatDate(s.dateOfBirth) : null],
-              ['Class', classLabel],
-              ['Roll number', s.rollNumber],
-              ['Admission number', s.admissionNumber],
-              ['Admission date', s.admissionDate ? formatDate(s.admissionDate) : null],
-              ['Academic year', s.academicYear?.name],
-              ["Father's name", s.fatherName],
-              ["Mother's name", s.motherName],
-              ["Guardian's name", s.guardianName],
-              ['Social category', s.socialCategory],
-              ['PEN (UDISE+)', s.penNumber],
-              ['APAAR ID', s.apaarId],
-              ['Blood group', s.bloodGroup],
-              ['Address', s.address],
-              ['Status', titleCase(s.status)],
-              ...(s.dateOfLeaving ? ([['Date of leaving', formatDate(s.dateOfLeaving)]] as Array<[string, string]>) : []),
-            ]}
-          />
-        </Card>
-      )}
+      {tab === 'overview' && <StudentOverview s={s} canEdit />}
 
       {tab === 'fees' && <FeesTab studentId={s.id} reloadKey={duesKey} canCollect={active} onCollect={() => setModal('collect')} admissionNumber={s.admissionNumber} />}
 
@@ -373,17 +363,6 @@ export default function StudentProfile() {
         </Card>
       )}
 
-      <EditStudentModal
-        student={s}
-        sections={sections}
-        open={editing}
-        onClose={() => setEditing(false)}
-        onSaved={(updated) => {
-          setEditing(false);
-          setData({ data: updated });
-          flash.show('success', 'Student details saved.');
-        }}
-      />
       {modal === 'collect' && (
         <CollectFeeModal
           api={feesApi}

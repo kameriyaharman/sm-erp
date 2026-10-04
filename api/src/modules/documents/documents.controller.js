@@ -2,6 +2,14 @@ import { env } from '../../config/env.js';
 import { renderReportCard } from './pdf/report-card.pdf.js';
 import { renderCertificate } from './pdf/certificate.pdf.js';
 import * as service from './documents.service.js';
+import { branchLogoBuffer } from '../setup/setup.repository.js';
+
+/** The school logo uploaded in Settings, unless the document's frozen snapshot carries its own. */
+async function withLogo(school, branchId) {
+  if (!school || school.logo) return school;
+  const logo = await branchLogoBuffer(branchId);
+  return logo ? { ...school, logo } : school;
+}
 
 const verifyBaseUrl = () => env.DOCUMENT_VERIFY_BASE_URL ?? `http://localhost:${env.PORT}/api/v1/verify`;
 
@@ -28,6 +36,7 @@ export async function updateReportCard(req, res) {
 
 export async function reportCardPdf(req, res) {
   const rc = await service.getReportCardDocument(req.auth, req.valid.params.id);
+  rc.school = await withLogo(rc.school, rc.branchId);
   sendPdf(res, `report-card-${rc.student.admissionNumber}-${rc.session}.pdf`, req.valid.query.download === '1');
   await renderReportCard(rc, res, { verifyBaseUrl: verifyBaseUrl() });
 }
@@ -57,6 +66,7 @@ export async function listCertificates(req, res) {
 
 export async function certificatePdf(req, res) {
   const { cert, copyLabel } = await service.getCertificateDocument(req.auth, req.valid.params.id, { copy: req.valid.query.copy });
+  cert.content = { ...cert.content, school: await withLogo(cert.content?.school, cert.branchId) };
   sendPdf(res, `${cert.number}.pdf`, req.valid.query.download === '1');
   res.set('X-Copy', copyLabel);
   await renderCertificate(cert, res, { verifyBaseUrl: verifyBaseUrl(), copyLabel });

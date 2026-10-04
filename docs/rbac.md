@@ -59,6 +59,20 @@ class-teacher sections + sections where they teach at least one subject.
 | List / search students | Yes (tenant) | Yes (branch) | Their sections | Their sections | No | No |
 | Student detail (incl. fees, attendance, report cards) | Yes (tenant) | Yes (branch) | Their sections | Their sections | No | No |
 | Admit / edit a student | Yes (tenant) | Yes (branch) | No | No | No | No |
+| Student photo: view | Yes (tenant) | Yes (branch) | Their sections | Their sections | No | No |
+| Student photo: upload / remove; reveal full Aadhaar (logged; elsewhere always `XXXX-XXXX-1234`) | Yes (tenant) | Yes (branch) | No | No | No | No |
+
+### Setup `/setup`, `/settings/school`, `/me`
+
+| Capability | Owner | Branch admin | Class teacher | Subject teacher | Parent | Student |
+|---|---|---|---|---|---|---|
+| Academic years + terms, classes + sections (class teacher), subjects: list / create / edit / safe delete | Yes (any branch, `?branchId=`) | Yes (branch) | No | No | No | No |
+| School profile (branch details, codes, principal), logo upload | Yes (any branch) | Yes (branch) | No | No | No | No |
+| Change the school (tenant) name | Yes | No (403) | No | No | No | No |
+| See the school logo | Yes | Yes | Yes (own branch) | Yes (own branch) | No | No |
+| My account: view, change own password (signs out other devices) | Yes | Yes | Yes | Yes | Yes | Yes |
+| My account: edit own name / mobile | Yes | Yes | Yes | Yes | No (the office changes a parent's mobile: it links siblings) | No |
+
 
 ### Homework `/homework` (+ files)
 

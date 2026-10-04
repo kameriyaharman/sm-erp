@@ -4,7 +4,7 @@ import { pool } from '../../db/pool.js';
 const SCHOOL_COLUMNS = `
   t.name AS school_name, t.timezone, b.name AS branch_name, b.code AS branch_code, b.affiliation_no, b.school_code,
   b.udise_code, b.address_line1, b.address_line2, b.city, b.state, b.postal_code, b.phone AS branch_phone,
-  b.email AS branch_email, b.settings AS branch_settings`;
+  b.email AS branch_email, b.settings AS branch_settings, b.board, b.website, b.principal_name`;
 
 // ===================================================================== report cards: inputs
 

@@ -1,4 +1,5 @@
 import { NS, invalidate } from '../../cache/cache.js';
+import { sendImage } from '../setup/upload.js';
 import * as service from './students.service.js';
 
 export async function listStudents(req, res) {
@@ -21,7 +22,24 @@ export async function admitStudent(req, res) {
 }
 
 export async function updateStudent(req, res) {
-  const { detail, tenantId } = await service.updateStudent(req.auth, req.valid.params.id, req.valid.body);
+  const { detail, tenantId, warnings } = await service.updateStudent(req.auth, req.valid.params.id, req.valid.body);
   await bust(tenantId);
-  res.json({ data: detail });
+  res.json({ data: detail, ...(warnings.length > 0 && { warnings }) });
+}
+
+export async function getPhoto(req, res) {
+  sendImage(req, res, await service.getPhoto(req.auth, req.valid.params.id));
+}
+
+export async function putPhoto(req, res) {
+  res.json({ data: await service.putPhoto(req.auth, req.valid.params.id, req.file) });
+}
+
+export async function deletePhoto(req, res) {
+  await service.deletePhoto(req.auth, req.valid.params.id);
+  res.status(204).end();
+}
+
+export async function revealAadhaar(req, res) {
+  res.set('Cache-Control', 'no-store').json({ data: await service.revealAadhaar(req.auth, req.valid.params.id) });
 }

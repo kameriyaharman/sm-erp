@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, UserPlus } from 'lucide-react';
-import { Button, Card, controlClass, cx, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Th } from '@/components/ui';
+import { buttonClass, Card, controlClass, cx, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Th } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { formatDate, titleCase } from '@/lib/format';
 import { Avatar, FilterBar, PhoneLink, StudentStatusBadge, useClasses, useDebounced } from '../shared';
-import AdmissionModal from './AdmissionModal';
 import type { Paged, StudentRow } from '../types';
 
 export default function StudentsList() {
@@ -22,11 +21,11 @@ export default function StudentsList() {
   const [status, setStatus] = useState<'active' | 'left' | 'all'>('active');
   const [sort, setSort] = useState<'name' | 'admission' | 'class'>('name');
   const [page, setPage] = useState(1);
-  const [admitting, setAdmitting] = useState(false);
 
+  // Old links (dashboard quick action) open the admission page.
   useEffect(() => {
-    if (params.get('new') === '1') setAdmitting(true);
-  }, [params]);
+    if (params.get('new') === '1') router.replace('/students/new');
+  }, [params, router]);
   useEffect(() => setPage(1), [q, classId, sectionId, status, sort]);
 
   const path = `/students${qs({ search: q.length ? q : undefined, classId, sectionId, status, sort, page, limit: 25 })}`;
@@ -40,9 +39,10 @@ export default function StudentsList() {
         title="Students"
         description={data ? `${data.meta.total.toLocaleString('en-IN')} ${status === 'left' ? 'former' : ''} students${filtered ? ' match the filters' : ''}` : 'Admissions, profiles and records'}
         actions={
-          <Button icon={<UserPlus className="h-4 w-4" aria-hidden />} onClick={() => setAdmitting(true)}>
+          <Link href="/students/new" className={buttonClass()}>
+            <UserPlus className="h-4 w-4" aria-hidden />
             New admission
-          </Button>
+          </Link>
         }
       />
       <Card padded={false}>
@@ -101,7 +101,13 @@ export default function StudentsList() {
           <EmptyState
             title={filtered ? 'No students match these filters' : 'No students yet'}
             description={filtered ? 'Try a different name or clear the filters.' : 'Admit your first student to get started.'}
-            action={!filtered && <Button onClick={() => setAdmitting(true)}>New admission</Button>}
+            action={
+              !filtered && (
+                <Link href="/students/new" className={buttonClass()}>
+                  New admission
+                </Link>
+              )
+            }
           />
         ) : (
           <div className={loading ? 'opacity-60 transition-opacity' : undefined}>
@@ -159,16 +165,6 @@ export default function StudentsList() {
         )}
       </Card>
 
-      <AdmissionModal
-        open={admitting}
-        onClose={() => setAdmitting(false)}
-        classes={classes}
-        sections={sections}
-        onCreated={(s) => {
-          setAdmitting(false);
-          router.push(`/students/${s.id}?admitted=1`);
-        }}
-      />
     </Page>
   );
 }

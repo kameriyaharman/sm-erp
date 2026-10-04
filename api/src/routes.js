@@ -9,6 +9,7 @@ import portalAccessRoutes from './modules/portal-access/portal-access.routes.js'
 import parentRoutes from './modules/parent/parent.routes.js';
 import notificationRoutes from './modules/notifications/notifications.routes.js';
 import schoolRoutes from './modules/school/school.routes.js';
+import { meRouter, settingsRouter, setupRouter } from './modules/setup/setup.routes.js';
 import studentRoutes from './modules/students/students.routes.js';
 import staffRoutes from './modules/staff/staff.routes.js';
 import { examsRouter, marksRouter, papersRouter } from './modules/exams/exams.routes.js';
@@ -36,9 +37,12 @@ router.use('/finance', financeRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/parent', parentRoutes);
 router.use('/school', schoolRoutes);
+router.use('/setup', setupRouter);
 // Before /settings: Settings -> Online payments (a school's own Razorpay account).
 router.use('/settings/payments', gatewaySettingsRouter);
+router.use('/settings', settingsRouter);
 router.use('/portal-access', portalAccessRoutes);
+router.use('/me', meRouter);
 router.use('/students', concessionRouter); // only /students/:id/fee-concession
 router.use('/students', studentRoutes);
 router.use('/staff', staffRoutes);

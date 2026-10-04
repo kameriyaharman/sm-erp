@@ -401,6 +401,92 @@ web app downloads with `fetch` + blob (a plain `<a href>` sends no Authorization
 
 ---
 
+## 13. Setup: admission record, academic setup, school profile, my account (migration `011`)
+
+### 13.1 Student admission record (`/students`, extends section 2)
+`POST /students` and `PATCH /students/:id` accept, and `GET /students/:id` returns, the full admission register.
+All new fields are optional on the API (the web form requires the address); in PATCH, `""`/`null` clears a field and a
+missing key leaves it alone. Nested objects are partial in PATCH (`{ "father": { "phone": null } }` clears only that).
+```json
+{ "bloodGroup": "A+|A-|B+|B-|AB+|AB-|O+|O-", "aadhaarNumber": "2345 6789 0123", "religion": "Hindu|Muslim|...|Prefer not to say",
+  "motherTongue": "Hindi", "nationality": "Indian", "house": "Tagore", "identificationMarks": "",
+  "penNumber": "", "apaarId": "123456789012",
+  "address": { "line1": "Flat 302, Kailash Apartments", "line2": "Sector 6, Dwarka", "city": "New Delhi",
+               "state": "<one of the 28 states / 8 UTs>", "pincode": "110075" } | null,
+  "father":  { "name": "", "phone": "9876543210", "email": "", "occupation": "" },
+  "mother":  { "name": "", "phone": "", "email": "", "occupation": "" },
+  "guardian": { "name": "", "relation": "Father|Mother|Grandfather|Grandmother|Uncle|Aunt|Brother|Sister|Other", "phone": "" },
+  "emergencyContact": { "name": "", "relation": "", "phone": "" },
+  "previousSchool": { "name": "", "board": "", "lastClassPassed": "UKG", "tcNumber": "", "tcDate": "YYYY-MM-DD" },
+  "medical": { "allergies": "", "notes": "" } }
+```
+- Phones: Indian mobiles, stored `+91XXXXXXXXXX` (400 on the group key, e.g. `details.body.father`).
+- Aadhaar: 12 digits, not starting 0/1, Verhoeff check digit; unique per school among live students
+  (409 `AADHAAR_TAKEN`, message names the other admission number). **Never returned in full**: the detail has
+  `aadhaarMasked: "XXXX-XXXX-0123"`. `GET /students/:id/aadhaar` (ADMINS, logged) → `{ data: { aadhaarNumber: "2345 6789 0123" } }`.
+- `fatherName` / `motherName` / `guardianName` (flat) still work; the nested `father.name` etc. win.
+- PATCH also takes `classId` (with `sectionId` of that class, same academic year; 422 `SECTION_NOT_IN_CLASS`,
+  422 `SECTION_NOT_IN_YEAR`) and `admissionDate`. A class change does not touch fees; the response then carries
+  `warnings: [ { code: "FEES_NOT_CHANGED", message } ]` next to `data`.
+- Detail adds: `aadhaarMasked, religion, motherTongue, nationality, house, identificationMarks,
+  photo: { url, updatedAt } | null, father, mother, guardian, emergencyContact | null, previousSchool | null,
+  medical: { bloodGroup, allergies, notes }`; `address` is now `{ line1, line2, city, state, pincode } | null`.
+- Photo: `PUT /students/:id/photo` (ADMINS, multipart field `file`, JPG/PNG/WebP by magic bytes, max 2 MB → 413
+  `FILE_TOO_LARGE`, 415 `FILE_TYPE_NOT_ALLOWED`) → `{ data: { url, updatedAt, mimeType, sizeBytes } }`;
+  `GET /students/:id/photo` (STAFF who can read the student; `ETag`, `Cache-Control: private, no-cache`);
+  `DELETE` (ADMINS) → 204.
+
+### 13.2 Academic setup: `/setup` (ADMINS)
+Every call works on one branch: branch admin = own branch; owner = `?branchId=` (default: head office).
+Writes return `{ data }` (201 for creates), deletes 204. Duplicates/overlaps → 409 `DUPLICATE` with a plain message.
+**Safe deletes**: anything still used → 409 `IN_USE`, `message` lists the usage ("Grade 5 can't be deleted: 15 students,
+8 fee structure lines and 33 exam papers use it. Deactivate it instead…"), `details.usage` = `{ students: 15, ... }`.
+- `GET /setup/academic-years` → `{ data: [ { id, name, startDate, endDate, isCurrent, sectionCount, studentCount,
+  terms: [ { id, name, sequenceNo, startDate, endDate, examCount } ] } ], meta: { branchId, suggestedNext: { name, startDate, endDate } } }`
+- `POST /setup/academic-years` `{ name?, startDate, endDate, copyFromYearId?, makeCurrent? }` — copies sections (with
+  class teacher, capacity, room; active classes only) and terms (moved by the calendar gap). The first year of a
+  branch is made current. `PATCH /setup/academic-years/:id` `{ name?, startDate?, endDate? }` (422 `TERMS_OUTSIDE_YEAR`).
+  `POST /setup/academic-years/:id/make-current`. `DELETE` → 409 `YEAR_IS_CURRENT` / `IN_USE` (empty sections and
+  terms go with the year).
+- `POST /setup/terms` `{ academicYearId, name, startDate, endDate, sequenceNo? }` (must lie inside the year),
+  `PATCH /setup/terms/:id`, `DELETE /setup/terms/:id` (blocked by exams, marks, report cards).
+- `GET /setup/classes?yearId=` (default current year; all classes incl. inactive) → `{ data: [ { id, name, code,
+  numericLevel, displayOrder, status, studentCount, sections: [ { id, name, capacity, roomNumber, studentCount,
+  classTeacher: { staffId, name } | null } ] } ], meta: { branchId, academicYear, staff: [ { staffId, name, designation, role } ] } }`
+- `POST /setup/classes` `{ name, code?, numericLevel? (-3..12; LKG -1, UKG 0), displayOrder? }`,
+  `PATCH /setup/classes/:id` (+ `status: active|inactive`; deactivating with current students → 409 `CLASS_HAS_STUDENTS`),
+  `DELETE` (blocked by students incl. former, fee structures, exam papers, report cards, notices, and attendance /
+  homework of its sections; unused sections go with it).
+- `POST /setup/sections` `{ classId, academicYearId?, name, capacity?, roomNumber?, classTeacherStaffId? }`,
+  `PATCH /setup/sections/:id` (capacity below current strength → 422 `CAPACITY_TOO_LOW`; unknown teacher → 422
+  `STAFF_NOT_FOUND`), `DELETE` (blocked by students, attendance, homework, exam papers, report cards; its timetable
+  and teacher assignments are removed).
+- `GET /setup/subjects` (incl. inactive) → `{ data: [ { id, name, code, subjectType, isGradedOnly, displayOrder, status,
+  teacherAssignments, examPapers } ] }`; `POST` `{ name, code, subjectType?, isGradedOnly?, displayOrder? }`;
+  `PATCH` (+ `status`); `DELETE` (blocked by exam papers, marks, homework, timetable, teacher assignments).
+
+### 13.3 School profile: `/settings/school`
+- `GET /settings/school` (ADMINS, `?branchId=` for the owner) → `{ data: { branchId, schoolName, branchName, branchCode,
+  address: { line1, line2, city, state, pincode }, phone, email, website, affiliationNo, schoolCode, udiseCode,
+  principalName, board, establishedYear, mediumOfInstruction, logo: { url, updatedAt } | null, canEditSchoolName } }`
+- `PUT /settings/school` (ADMINS) — all fields above except `branchId/branchCode/logo/canEditSchoolName`;
+  `schoolName` (the tenant) only for the owner (403 otherwise). UDISE 11 digits, PIN 6 digits.
+- Logo: `PUT /settings/school/logo` (ADMINS, multipart `file`, PNG/JPG only, max 1 MB, must be embeddable by the PDF
+  engine), `GET` (STAFF), `DELETE` (ADMINS). Certificates and report cards print it (when their frozen snapshot has
+  no logo of its own); principal, board and website come from these columns.
+
+### 13.4 My account: `/me`
+- `GET /me` (any role) → `{ data: { id, role, firstName, lastName, email, username, phone, schoolName, branchName,
+  staff: { employeeCode, designation, department } | null, lastLoginAt, passwordChangedAt } }`
+- `PATCH /me` (STAFF) `{ firstName?, lastName?, phone? }` → same shape. Email (the login) is changed by the office.
+- `POST /me/password` (any role) `{ currentPassword, newPassword, client?: web|mobile }` — new: ≥ 10 characters,
+  letters + digits, not the old one. A wrong current password → 400 (`details.body.currentPassword`) and counts as a
+  failed login (lockout → 423). On success every refresh token of the user is revoked, older access tokens stop
+  working, and a fresh session is returned for this device: `{ data: { tokenType, accessToken, expiresIn,
+  endedSessions } }` + the refresh cookie (mobile: `refreshToken` in the body).
+
+---
+
 ## 15. Online payments with the school's own Razorpay, and portal logins (migration `013`)
 
 Each school connects its **own** Razorpay account; money goes to the school's bank account. Key secret and webhook
@@ -624,3 +710,15 @@ homework gets file attachments. Full matrix: `docs/rbac.md`.
 - Uploads use `multer` (memory storage, streamed 5 MB limit); the global JSON body limit (100 kb) is unchanged and
   `express.json()` ignores multipart bodies.
 
+### Setup module (migration `011_student_profile_setup.sql`)
+
+Client: "student add karne wale me student ki address jese chije missing h". The admission form is now a full page
+(`/students/new`, edit `/students/:id/edit`) with the complete admission register; see section 13.
+
+- **New**: section 13 (`/setup/*`, `/settings/school` + logo, `/me`, student photo + Aadhaar reveal).
+- **Changed (breaking for one field)**: `GET /students/:id` `address` was "jsonb or null" and is now
+  `{ line1, line2, city, state, pincode } | null`. Other detail changes are additive.
+- **New error codes**: 409 `AADHAAR_TAKEN`, `IN_USE`, `DUPLICATE`, `YEAR_IS_CURRENT`, `CLASS_HAS_STUDENTS`;
+  422 `SECTION_NOT_IN_YEAR`, `TERMS_OUTSIDE_YEAR`, `CAPACITY_TOO_LOW`, `STAFF_NOT_FOUND`, `CLASS_INACTIVE`, `NO_CURRENT_YEAR`.
+- PDFs: `schoolFromRow` prefers the new `branches` columns (`board`, `website`, `principal_name`) over
+  `settings.documents`; saving the school profile removes those three keys from `settings.documents`.
