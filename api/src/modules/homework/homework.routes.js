@@ -23,7 +23,7 @@ router.get('/', staff, validate({ query: schemas.listQuery }), controller.listHo
 router.post('/', staff, validate({ body: schemas.createBody }), controller.createHomework);
 
 // Files (before /:id so "attachments" is never taken for a homework id).
-router.get('/attachments/:id', authorize(...STAFF, ROLES.PARENT), validate({ params: idParams }), controller.downloadAttachment);
+router.get('/attachments/:id', authorize(...STAFF, ROLES.PARENT, ROLES.STUDENT), validate({ params: idParams }), controller.downloadAttachment);
 router.delete('/attachments/:id', staff, validate({ params: idParams }), controller.deleteAttachment);
 router.post('/:id/attachments', staff, validate({ params: idParams }), controller.assertCanUpload, uploadSingleFile, controller.addAttachment);
 

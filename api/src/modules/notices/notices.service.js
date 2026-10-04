@@ -26,7 +26,7 @@ export async function listNotices(auth, { limit }) {
   let rows;
   if (isAdmin(auth)) rows = await repo.listForAdmin(await staffScope(auth), limit);
   else if (auth.role === ROLES.TEACHER) rows = await repo.listForTeacher(auth, limit);
-  else if (auth.role === ROLES.PARENT) rows = await repo.listForParent(auth, limit);
+  else if (auth.role === ROLES.PARENT || auth.role === ROLES.STUDENT) rows = await repo.listForParent(auth, limit);   // student: own class
   else rows = [];
   return rows.map(mapNotice);
 }

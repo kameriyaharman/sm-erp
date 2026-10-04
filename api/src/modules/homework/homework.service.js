@@ -159,7 +159,7 @@ export async function getAttachmentFile(auth, id) {
   const notFound = () => AppError.notFound('File not found', 'ATTACHMENT_NOT_FOUND');
   if (!a) throw notFound();
 
-  if (auth.role === ROLES.PARENT) {
+  if (auth.role === ROLES.PARENT || auth.role === ROLES.STUDENT) {
     const ok = a.tenant_id === auth.tenantId
       && (await repo.parentHasChildInSection(pool, { userId: auth.userId, tenantId: auth.tenantId, sectionId: a.section_id }));
     if (!ok) throw notFound();

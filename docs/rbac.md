@@ -13,7 +13,7 @@ another tenant, a second branch).
 | **Class teacher** (`teacher` + `sections.class_teacher_id`) | `teacher@demo.school` (Grade 5 A) | The section(s) they are class teacher of, for the current academic year. |
 | **Subject teacher** (`teacher` + `teacher_subject_assignments`) | `teacher@` (English 5 A, 6 A), `maths@`, `science@`, `hindi@demo.school` | The (section, subject) pairs assigned to them for the current academic year. One teacher per subject per section. |
 | **Parent** (`parent`) | `parent@demo.school` | Only their own children (primary parent `student_profiles.parent_id` or linked guardian `student_guardians`). |
-| **Student** (`student`) | (no demo login) | Only their own published report cards. |
+| **Student** (`student`) | admission no. `DPS-1001` (Aarav, any case) | Only themself, in the family portal (`/parent/*` with one child): fees + paying them, attendance, homework + files of their section, timetable, transport, published report cards, notices. A sibling's id is a 404. |
 
 A teacher is usually both: class teacher of one section and subject teacher in several. **"Their sections"** =
 class-teacher sections + sections where they teach at least one subject.
@@ -26,6 +26,7 @@ class-teacher sections + sections where they teach at least one subject.
 | Teacher, record of **their own branch** but not their section / subject | **403** `NOT_ASSIGNED` (attendance, report cards: `NOT_CLASS_TEACHER`; homework of another teacher: `NOT_OWNER`) |
 | Any id of **another branch or tenant** (admins and teachers), or a parent asking for someone else's child / file | **404** (never confirms the record exists) |
 | Not signed in / token revoked / account inactive | **401** |
+| Signed in with a temporary password and not yet changed it (any endpoint except `/auth/*`) | **403** `PASSWORD_CHANGE_REQUIRED` |
 
 ## Matrix
 
@@ -63,18 +64,18 @@ class-teacher sections + sections where they teach at least one subject.
 
 | Capability | Owner | Branch admin | Class teacher | Subject teacher | Parent | Student |
 |---|---|---|---|---|---|---|
-| List homework | Yes (tenant) | Yes (branch) | Their sections (all subjects) | Their sections (all subjects) | Own child's section (`/parent`) | No |
+| List homework | Yes (tenant) | Yes (branch) | Their sections (all subjects) | Their sections (all subjects) | Own child's section (`/parent`) | Own section (`/parent`) |
 | Set homework | Any section, subject optional | Any section in branch, subject optional | **Only subjects they teach in that section** | **Only (section, subject) assigned** | No | No |
 | Delete homework | Yes | Yes | Only homework they set | Only homework they set | No | No |
 | Upload a file (max 5 x 5 MB, allowed types only) | Yes | Yes | Only to homework they set | Only to homework they set | No | No |
 | Delete a file | Yes | Yes | Only on homework they set | Only on homework they set | No | No |
-| Download a file | Yes (tenant) | Yes (branch) | Their sections (or homework they set) | Their sections (or homework they set) | Only for a child's section, else 404 | No |
+| Download a file | Yes (tenant) | Yes (branch) | Their sections (or homework they set) | Their sections (or homework they set) | Only for a child's section, else 404 | Only for own section, else 404 |
 
 ### Timetable `/timetable`
 
 | Capability | Owner | Branch admin | Class teacher | Subject teacher | Parent | Student |
 |---|---|---|---|---|---|---|
-| Section timetable | Yes (tenant) | Yes (branch) | Their sections | Their sections | Own child (`/parent`) | No |
+| Section timetable | Yes (tenant) | Yes (branch) | Their sections | Their sections | Own child (`/parent`) | Own (`/parent`) |
 | Replace a section's week (teacher clash check) | Yes (tenant) | Yes (branch) | No | No | No | No |
 
 ### Exams, papers and marks `/exams`, `/papers`, `/marks`
@@ -92,7 +93,7 @@ class-teacher sections + sections where they teach at least one subject.
 |---|---|---|---|---|---|---|
 | Markable sections + roster, take / correct attendance | Yes (30-day window) | Yes (30-day window) | Own CT section only (today + 1 day back) | No (`NOT_CLASS_TEACHER`) | No | No |
 | Parent-notification status of a day | Yes | Yes | Own CT section | No | No | No |
-| Monthly history of a section | Yes (tenant) | Yes (branch) | Their sections | Their sections | Own child (`/parent/children/:id/attendance`) | No |
+| Monthly history of a section | Yes (tenant) | Yes (branch) | Their sections | Their sections | Own child (`/parent/children/:id/attendance`) | Own (same endpoint) |
 
 ### Report cards and certificates `/documents`
 
@@ -110,7 +111,7 @@ class-teacher sections + sections where they teach at least one subject.
 
 | Capability | Owner | Branch admin | Class teacher | Subject teacher | Parent | Student |
 |---|---|---|---|---|---|---|
-| Read | All in scope | All in branch | Audience all / teachers, own branch | Audience all / teachers, own branch | Audience all / parents, children's branches, whole-school or a child's class | Empty list |
+| Read | All in scope | All in branch | Audience all / teachers, own branch | Audience all / teachers, own branch | Audience all / parents, children's branches, whole-school or a child's class | Same rule as parents, for their own class |
 | Post (optional SMS) / delete | Yes | Yes | No | No | No | No |
 
 ### Fees, payments, finance, notifications, transport, expenses
@@ -118,7 +119,12 @@ class-teacher sections + sections where they teach at least one subject.
 | Capability | Owner | Branch admin | Class teacher | Subject teacher | Parent | Student |
 |---|---|---|---|---|---|---|
 | Fees: ledgers, invoices, counter payments, analytics, defaulters | Yes (tenant) | Yes (branch) | No | No | No | No |
-| Online payment: create order, order status, receipt PDF | Yes | Yes | No | No | Own children's invoices / receipts | No |
+| Online payment: create order, order status, receipt PDF | Yes | Yes | No | No | Own children's invoices / receipts | Own invoices / receipts |
+| Online payments console, summary, detail, **reconcile** (`/finance/online-payments`) | Yes (tenant) | Yes (branch) | No | No | No | No |
+| Payment gateway settings (`/settings/payments`): school-wide Razorpay account | Read + write | Read (masked) | No | No | No | No |
+| Payment gateway settings: a branch's own account (override) | Any branch | Own branch only | No | No | No | No |
+| Portal logins (`/portal-access`): list, reset password, bulk slips | Yes (tenant) | Students of own branch, parents with a child there | No | No | No | No |
+| Change own password (`POST /auth/change-password`) | Yes | Yes | Yes | Yes | Yes | Yes |
 | SMS broadcasts, fee reminders, notification logs | Yes | Yes | No | No | No | No |
 | Transport routes, stops, rider assignments | Yes (tenant) | Yes (branch) | No | No | Own child's route (`/parent`) | No |
 | Expenses | Yes (tenant) | Yes (branch) | No | No | No | No |
@@ -127,7 +133,7 @@ class-teacher sections + sections where they teach at least one subject.
 
 | Capability | Owner | Branch admin | Class teacher | Subject teacher | Parent | Student |
 |---|---|---|---|---|---|---|
-| Home, child fees / attendance / homework (+ files) / timetable / transport | No | No | No | No | Own children only (another child id: 404) | No |
+| Home, child fees / attendance / homework (+ files) / timetable / transport | No | No | No | No | Own children only (another child id: 404) | Only themself (`children` has one entry, `viewer: "student"`; any other id: 404) |
 
 ## How it is enforced (for developers)
 
@@ -139,7 +145,9 @@ class-teacher sections + sections where they teach at least one subject.
   sections and `teacher_subject_assignments`; the rules themselves are pure functions in
   `api/src/modules/shared/teacher-scope.helpers.js` (`teaches`, `hasSection`, `marksAccess`, `paperSectionsForTeacher`),
   unit-tested in `api/test/rbac.test.js`. `loadSectionInScope` = branch check (404) + teacher section check (403).
-- Parents: `loadChildForParent` (404 for anyone else's child); file downloads check that a child is in the homework's section.
+- Parents and students: `loadChildForParent` (404 for anyone else's child; a student matches only `student_profiles.user_id`); file downloads check that a child (or the student) is in the homework's section; payments use `isGuardianOf` / `isStudentSelf`.
+- Temporary passwords: `authenticate` answers 403 `PASSWORD_CHANGE_REQUIRED` for every endpoint outside `/api/v1/auth/` while `users.must_change_password` is set.
+- Payment webhooks are not JWT-authenticated: `/finance/webhook/:tenantCode` must be signed with the webhook secret of one of that school's saved Razorpay accounts and can only settle that school's orders made with that account; the legacy `/finance/webhook` only reaches platform-account orders.
 - Files: `api/src/modules/homework/file-type.js` (extension + declared type + magic bytes, filename sanitising),
   unit-tested in `api/test/homework-files.test.js`.
 - Changing assignments: admins in the Staff screen (`PUT /staff/:id/assignments`). Changes apply to the teacher's very

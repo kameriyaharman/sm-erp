@@ -114,7 +114,8 @@ export async function parentHasChildInSection(db, { userId, tenantId, sectionId 
   const { rows } = await db.query(
     `SELECT 1 FROM student_profiles sp
       WHERE sp.section_id = $3 AND sp.tenant_id = $2 AND sp.deleted_at IS NULL
-        AND (sp.parent_id = $1 OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $1))
+        AND (sp.parent_id = $1 OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $1)
+             OR sp.user_id = $1)   -- student portal: their own section
       LIMIT 1`,
     [userId, tenantId, sectionId],
   );

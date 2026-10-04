@@ -35,7 +35,8 @@ export async function listForParent(auth, limit) {
     `WITH kids AS (
        SELECT sp.branch_id, sp.class_id FROM student_profiles sp
         WHERE sp.deleted_at IS NULL AND sp.tenant_id = $1 AND sp.status IN ('enrolled', 'suspended')
-          AND (sp.parent_id = $2 OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $2))
+          AND (sp.parent_id = $2 OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $2)
+               OR sp.user_id = $2)
      )
      ${SELECT}
       WHERE n.deleted_at IS NULL AND n.tenant_id = $1 AND n.audience IN ('all', 'parents')

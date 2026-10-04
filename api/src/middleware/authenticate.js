@@ -37,6 +37,12 @@ export async function authenticate(req, _res, next) {
     throw AppError.unauthorized('Session expired, please sign in again', 'TOKEN_REVOKED');
   }
 
+  // Temporary password (issued by the school office): nothing but the auth endpoints until the
+  // user sets their own (POST /auth/change-password). The web app shows "Set your password".
+  if (user.must_change_password && !req.originalUrl.split('?')[0].startsWith('/api/v1/auth/')) {
+    throw AppError.forbidden('Set a new password to continue', 'PASSWORD_CHANGE_REQUIRED');
+  }
+
   req.auth = Object.freeze({
     userId: user.id,
     role: user.role,

@@ -23,3 +23,11 @@ export const logoutSchema = z
     refreshToken: z.string().min(20).max(200).optional(),
   })
   .strict();
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128),   // the temporary password, on first sign-in
+    newPassword: z.string().min(1).max(128),       // rules in login-id.js passwordProblems (422 WEAK_PASSWORD)
+    client: z.enum(['web', 'mobile']).default('web'),
+  })
+  .strict();

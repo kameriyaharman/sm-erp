@@ -80,6 +80,7 @@ export async function resolveWriteBranch(auth, branchId) {
 /**
  * A parent's child, or 404. Children = students whose primary parent is the caller,
  * or who list the caller as a guardian (same rule as the parent home and payments).
+ * A student signed in to the family portal gets only their own profile.
  */
 export async function loadChildForParent(db, auth, studentId) {
   const { rows } = await db.query(
@@ -91,7 +92,8 @@ export async function loadChildForParent(db, auth, studentId) {
        LEFT JOIN sections s ON s.id = sp.section_id
       WHERE sp.id = $1 AND sp.tenant_id = $3 AND sp.deleted_at IS NULL
         AND (sp.parent_id = $2
-             OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $2))`,
+             OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $2)
+             OR sp.user_id = $2)`,
     [studentId, auth.userId, auth.tenantId],
   );
   if (!rows[0]) throw AppError.notFound('Student not found', 'STUDENT_NOT_FOUND');

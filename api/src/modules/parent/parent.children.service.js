@@ -1,5 +1,6 @@
 import { pool } from '../../db/pool.js';
-import { getRazorpay } from '../payments/index.js';
+import { resolveGateway } from '../payments/gateway.js';
+import { fromPaise } from '../../utils/money.js';
 import { getUnbilledAllocations, resolveAcademicYear } from '../fees/fees.repository.js';
 import { studentFeeTotals, attendanceCounts } from '../students/students.repository.js';
 import { pageOfHomework } from '../homework/homework.service.js';
@@ -17,7 +18,7 @@ export async function childFees(auth, studentId) {
   const child = await loadChildForParent(pool, auth, studentId);
   const year = await resolveAcademicYear(pool, { branchId: child.branch_id });
 
-  const [totals, invoices, upcoming, receipts] = await Promise.all([
+  const [totals, invoices, upcoming, receipts, gateway] = await Promise.all([
     studentFeeTotals(pool, child.id),
     pool.query(
       `SELECT i.id, i.invoice_number, i.period_label, i.issue_date, i.due_date, i.net_amount::text AS net_amount,
@@ -38,6 +39,7 @@ export async function childFees(auth, studentId) {
          FROM fee_receipts WHERE student_id = $1 ORDER BY received_at DESC`,
       [child.id],
     ).then((r) => r.rows),
+    resolveGateway(pool, { tenantId: child.tenant_id, branchId: child.branch_id }),
   ]);
 
   return {
@@ -60,7 +62,10 @@ export async function childFees(auth, studentId) {
     receipts: receipts.map((r) => ({
       id: r.id, receiptNumber: r.receipt_number, receivedAt: r.received_at, amount: r.amount, paymentMode: r.payment_mode,
     })),
-    onlinePayment: { enabled: getRazorpay().configured },
+    // The school's own Razorpay account (Settings -> Online payments). mode 'test' = no real money.
+    onlinePayment: gateway.enabled
+      ? { enabled: true, mode: gateway.mode, keyId: gateway.keyId, allowPartial: gateway.allowPartial, minAmount: fromPaise(gateway.minAmountPaise) }
+      : { enabled: false, mode: null, keyId: null, allowPartial: false, minAmount: null },
   };
 }
 

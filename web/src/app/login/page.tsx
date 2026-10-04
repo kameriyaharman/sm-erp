@@ -4,6 +4,7 @@ import { Suspense, useEffect, useId, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CircleAlert, Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { AuthError, getAccessToken, currentUser, homeFor, login } from '@/lib/session';
+import { rememberTemporaryPassword } from '@/lib/pending-password';
 import { controlClass, cx } from '@/components/ui';
 
 export default function LoginPage() {
@@ -17,7 +18,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const ids = { school: useId(), user: useId(), pass: useId(), error: useId(), remember: useId() };
+  const ids = { school: useId(), user: useId(), userHint: useId(), pass: useId(), error: useId(), remember: useId() };
   const [tenantCode, setTenantCode] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -30,7 +31,7 @@ function LoginForm() {
   useEffect(() => {
     getAccessToken().then((token) => {
       const user = token ? currentUser() : null;
-      if (user) router.replace(safeNext(params.get('next')) ?? homeFor(user.role));
+      if (user) router.replace(user.mustChangePassword ? '/set-password' : safeNext(params.get('next')) ?? homeFor(user.role));
     });
     try {
       const last = localStorage.getItem('sm_last_school');
@@ -51,6 +52,13 @@ function LoginForm() {
         else localStorage.removeItem('sm_last_school');
       } catch {
         /* ignore */
+      }
+      if (user.mustChangePassword) {
+        // First sign-in with a temporary password: the next screen asks for a new one (without retyping this one).
+        rememberTemporaryPassword(password);
+        const next = safeNext(params.get('next'));
+        router.replace(next ? `/set-password?next=${encodeURIComponent(next)}` : '/set-password');
+        return;
       }
       router.replace(safeNext(params.get('next')) ?? homeFor(user.role));
     } catch (err) {
@@ -115,11 +123,14 @@ function LoginForm() {
                   onChange={(e) => setIdentifier(e.target.value)}
                   autoCapitalize="none"
                   autoComplete="username"
-                  inputMode="email"
                   placeholder="you@school.in"
+                  aria-describedby={ids.userHint}
                   required
                   spellCheck={false}
                 />
+                <p id={ids.userHint} className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  Parents: your mobile number. Students: your admission number.
+                </p>
               </div>
               <div>
                 <label htmlFor={ids.pass} className={label}>

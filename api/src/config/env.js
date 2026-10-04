@@ -95,6 +95,16 @@ const envSchema = z.object({
   RAZORPAY_API_BASE: z.string().url().default('https://api.razorpay.com'),
   RAZORPAY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
   PAYMENT_ORDER_TTL_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(30),
+  // Each school's own Razorpay keys (Settings -> Online payments) are encrypted with this key (AES-256-GCM).
+  // 32 random bytes, base64: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  // Optional to boot; required to save or use school gateway keys. Changing it makes saved keys unreadable
+  // (schools then re-enter them).
+  SETTINGS_ENCRYPTION_KEY: z
+    .string()
+    .refine((v) => /^[A-Za-z0-9+/_-]+={0,2}$/.test(v) && Buffer.from(v, 'base64').length === 32, 'Must be 32 random bytes, base64-encoded')
+    .optional(),
+  // School codes that may save Razorpay TEST keys in production (test mode, no real money). Default: the demo school.
+  PAYMENTS_TEST_TENANTS: z.string().default('demo').transform((v) => csv(v).map((c) => c.toLowerCase())),
 
   // ---- Official documents: base URL printed in QR codes, e.g. https://app.school.in/verify (the web page
   // calls GET /api/v1/verify/:code). Defaults to the API's own JSON endpoint.

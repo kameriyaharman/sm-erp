@@ -5,6 +5,7 @@ import { env } from '../config/env.js';
 import { AppError } from '../errors/AppError.js';
 import { getRedis, redisReady } from '../cache/redis.js';
 import { logger } from '../utils/logger.js';
+import { loginRateKey } from '../modules/auth/login-id.js';
 
 /**
  * Rate limits. With REDIS_URL the counters are shared by every replica (Redis store);
@@ -134,11 +135,8 @@ export const loginAccountLimiter = limiter({
   windowMs: 15 * MINUTE,
   limit: env.RATE_LIMIT_LOGIN_PER_ACCOUNT,
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => {
-    const tenant = String(req.body?.tenantCode ?? '').trim().toLowerCase();
-    const identifier = String(req.body?.identifier ?? '').trim().toLowerCase();
-    return createHash('sha256').update(`${tenant}|${identifier}`).digest('base64url');
-  },
+  // Every spelling of one phone number ("+91 98100 55555", "9810055555") is one account.
+  keyGenerator: (req) => createHash('sha256').update(loginRateKey(req.body?.tenantCode, req.body?.identifier)).digest('base64url'),
   skip: (req) => !req.body?.identifier,
 });
 

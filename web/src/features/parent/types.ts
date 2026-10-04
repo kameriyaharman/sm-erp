@@ -88,6 +88,9 @@ export interface ChildHome {
 }
 
 export interface ParentHomeData {
+  /** 'student' = a student signed in to the family portal: one child, themself. */
+  viewer?: 'parent' | 'student';
+  /** The signed-in person's name (the student's own name for a student). */
   parentName: string;
   schoolName: string;
   schoolPhone: string | null;
@@ -139,7 +142,8 @@ export interface ChildFees {
   invoices: FeeInvoice[];
   upcoming: UpcomingInstallment[];
   receipts: FeeReceipt[];
-  onlinePayment: { enabled: boolean };
+  /** The school's own Razorpay account (Settings -> Online payments). mode 'test' = no real money moves. */
+  onlinePayment: { enabled: boolean; mode?: 'test' | 'live' | null; keyId?: string | null; allowPartial?: boolean; minAmount?: Money | null };
 }
 
 export type AttendanceDayStatus = 'present' | 'absent' | 'late' | 'leave' | 'half_day';

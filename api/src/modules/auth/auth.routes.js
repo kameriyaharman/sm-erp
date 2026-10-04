@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
 import { validate } from '../../middleware/validate.js';
 import { loginAccountLimiter, loginIpLimiter, logoutLimiter, refreshLimiter } from '../../middleware/rateLimit.js';
-import { loginSchema, logoutSchema, refreshSchema } from './auth.schemas.js';
+import { changePasswordSchema, loginSchema, logoutSchema, refreshSchema } from './auth.schemas.js';
 import * as controller from './auth.controller.js';
 
 const router = Router();
@@ -14,5 +14,8 @@ router.post('/refresh', refreshLimiter, validate({ body: refreshSchema }), contr
 router.post('/logout', logoutLimiter, validate({ body: logoutSchema }), controller.logout);
 router.post('/logout-all', authenticate, controller.logoutAll);
 router.get('/me', authenticate, controller.me);
+// Signed-in user sets a new password (also the forced step after a temporary password). Wrong current
+// passwords count toward the per-IP brake and the account lockout.
+router.post('/change-password', loginIpLimiter, authenticate, validate({ body: changePasswordSchema }), controller.changePassword);
 
 export default router;

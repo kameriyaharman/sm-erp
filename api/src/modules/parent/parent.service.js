@@ -13,7 +13,8 @@ export async function getParentHome(auth) {
     `WITH kids AS (
        SELECT sp.* FROM student_profiles sp
         WHERE sp.deleted_at IS NULL AND sp.status IN ('enrolled', 'suspended') AND sp.tenant_id = $2
-          AND (sp.parent_id = $1 OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $1))
+          AND (sp.parent_id = $1 OR EXISTS (SELECT 1 FROM student_guardians g WHERE g.student_id = sp.id AND g.guardian_user_id = $1)
+               OR sp.user_id = $1)   -- a student signed in to the portal: only themself
      ),
      today AS (SELECT (now() AT TIME ZONE t.timezone)::date AS d FROM tenants t WHERE t.id = $2)
      SELECT k.id, k.section_id, su.first_name, concat_ws(' ', su.first_name, su.last_name) AS name, c.name AS class_name, sec.name AS section_name,
@@ -65,6 +66,7 @@ export async function getParentHome(auth) {
   );
 
   return {
+    viewer: auth.role === 'student' ? 'student' : 'parent',
     parentName: meta?.parent_name ?? '',
     schoolName: meta?.school_name ?? '',
     schoolPhone: children[0]?.branch_phone ?? null,

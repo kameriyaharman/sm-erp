@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { CalendarClock, CircleAlert, CircleCheck, Download, FileText, Info, LoaderCircle, ReceiptText, Wallet } from 'lucide-react';
+import { CalendarClock, CircleAlert, CircleCheck, Download, FileText, FlaskConical, Info, LoaderCircle, ReceiptText, Wallet } from 'lucide-react';
 import { useApi } from '@/lib/useApi';
 import { API_BASE, getAccessToken, openPdf } from '@/lib/session';
 import { payFees } from './razorpay-checkout';
@@ -9,9 +9,10 @@ import { ACCENT, EmptyBlock, ErrorBlock, Loading, PCard, SectionTitle, primaryBt
 import { PAYMENT_MODE, daysUntil, inr, shortDate, tsDate } from './format';
 import type { ChildFees, ChildHome, FeeInvoice, UpcomingInstallment } from './types';
 
-type Flash = { tone: 'success' | 'error' | 'info'; text: string } | null;
+type Flash = { tone: 'success' | 'error' | 'info'; text: string; receipt?: { id: string; number: string } } | null;
 
-export default function FeesScreen({ home }: { home: ChildHome }) {
+/** `self`: a student viewing their own fees (copy says "your" instead of the child's name). */
+export default function FeesScreen({ home, self = false }: { home: ChildHome; self?: boolean }) {
   const { data, error, loading, reload } = useApi<{ data: ChildFees }>(`/parent/children/${home.child.id}/fees`);
   const [flash, setFlash] = useState<Flash>(null);
   const [paying, setPaying] = useState<string | null>(null);
@@ -24,16 +25,19 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
   const open = fees.invoices.filter((i) => i.status !== 'paid' && Number(i.balanceAmount) > 0);
   const paidBills = fees.invoices.filter((i) => !open.includes(i));
   const online = fees.onlinePayment.enabled;
+  const testMode = online && fees.onlinePayment.mode === 'test';
+  const partial = online && Boolean(fees.onlinePayment.allowPartial);
+  const minPart = Number(fees.onlinePayment.minAmount ?? 1);
 
-  async function pay(invoices: FeeInvoice[], key: string) {
+  async function pay(invoices: FeeInvoice[], key: string, amount?: string) {
     setFlash(null);
     setPaying(key);
     try {
       const token = await getAccessToken();
       if (!token) throw new Error('Your session has ended. Please sign in again.');
-      const result = await payFees({ baseUrl: API_BASE, accessToken: token, invoiceIds: invoices.map((i) => i.id), themeColor: ACCENT });
+      const result = await payFees({ baseUrl: API_BASE, accessToken: token, invoiceIds: invoices.map((i) => i.id), amount, themeColor: ACCENT });
       if (result.status === 'paid') {
-        setFlash({ tone: 'success', text: `Payment received. Receipt ${result.receiptNumber} is ready below.` });
+        setFlash({ tone: 'success', text: `Payment received. Receipt ${result.receiptNumber} is ready.`, receipt: { id: result.receiptId, number: result.receiptNumber } });
         reload();
       } else if (result.status === 'processing') {
         setFlash({ tone: 'info', text: 'Payment done. The school is confirming it; your receipt will appear here in a few minutes.' });
@@ -50,7 +54,6 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
   }
 
   async function downloadReceipt(id: string, number: string) {
-    setFlash(null);
     try {
       await openPdf(`/finance/receipts/${id}/pdf`, `${number.replace(/\//g, '-')}.pdf`);
     } catch (e) {
@@ -60,7 +63,16 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
 
   return (
     <>
-      <Totals fees={fees} firstName={home.child.firstName} />
+      <Totals fees={fees} firstName={home.child.firstName} self={self} />
+
+      {testMode && (
+        <p className="flex gap-2.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100" role="note">
+          <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>
+            <span className="font-semibold">Test mode.</span> The school is trying out online payment: use Razorpay test cards or UPI. No real money is taken.
+          </span>
+        </p>
+      )}
 
       {flash && (
         <p
@@ -75,6 +87,15 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
             .join(' ')}
         >
           {flash.text}
+          {flash.receipt && (
+            <button
+              type="button"
+              onClick={() => downloadReceipt(flash.receipt!.id, flash.receipt!.number)}
+              className="ml-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden /> Download receipt
+            </button>
+          )}
         </p>
       )}
 
@@ -110,6 +131,9 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
                     {paying === inv.id && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />}
                     Pay {inr(inv.balanceAmount)} now
                   </button>
+                  {partial && Number(inv.balanceAmount) > minPart && (
+                    <PartPayment invoice={inv} min={minPart} disabled={paying !== null} busy={paying === `part-${inv.id}`} onPay={(amount) => pay([inv], `part-${inv.id}`, amount)} />
+                  )}
                   {!online && <p className="text-center text-xs text-stone-500 dark:text-stone-400">Online payment is not enabled by the school yet — pay at the school office.</p>}
                 </div>
               </InvoiceCard>
@@ -174,13 +198,13 @@ export default function FeesScreen({ home }: { home: ChildHome }) {
   );
 }
 
-function Totals({ fees, firstName }: { fees: ChildFees; firstName: string }) {
+function Totals({ fees, firstName, self }: { fees: ChildFees; firstName: string; self: boolean }) {
   const { totalFee, paid, pending, overdue } = fees.totals;
   const pct = Number(totalFee) > 0 ? Math.min(100, Math.round((Number(paid) / Number(totalFee)) * 100)) : 0;
   const hasOverdue = Number(overdue) > 0;
   return (
     <PCard className="p-5" aria-label="Fee summary">
-      <p className="text-sm text-stone-500 dark:text-stone-400">{firstName}&apos;s fees this year</p>
+      <p className="text-sm text-stone-500 dark:text-stone-400">{self ? 'Your fees this year' : `${firstName}'s fees this year`}</p>
       <p className="mt-1 flex items-baseline gap-2">
         <span className="text-3xl font-bold tabular-nums tracking-tight">{inr(pending)}</span>
         <span className="text-sm text-stone-500 dark:text-stone-400">pending</span>
@@ -292,5 +316,54 @@ function Upcoming({ items }: { items: UpcomingInstallment[] }) {
         <Wallet className="h-3.5 w-3.5" aria-hidden /> Bills are raised a few days before each due date.
       </p>
     </section>
+  );
+}
+
+/** "Pay part of this bill": an amount between the school's minimum and the balance. */
+function PartPayment({ invoice, min, disabled, busy, onPay }: { invoice: FeeInvoice; min: number; disabled: boolean; busy: boolean; onPay: (amount: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const max = Number(invoice.balanceAmount);
+  const n = Number(value);
+  const error =
+    value === '' ? null : !/^\d+(\.\d{1,2})?$/.test(value) ? 'Enter an amount in rupees, like 2500' : n < min ? `At least ${inr(min)}` : n > max ? `At most ${inr(max)}` : null;
+  if (!open) {
+    return (
+      <button type="button" className="mx-auto text-sm font-semibold text-indigo-600 underline-offset-2 hover:underline disabled:opacity-60 dark:text-indigo-200" disabled={disabled} onClick={() => setOpen(true)}>
+        Pay part of this bill
+      </button>
+    );
+  }
+  return (
+    <form
+      className="flex flex-col gap-2 rounded-lg bg-stone-50 p-3 dark:bg-canvas/60"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!error && value) onPay(value);
+      }}
+    >
+      <label htmlFor={`part-${invoice.id}`} className="text-xs font-medium text-stone-600 dark:text-stone-300">
+        Amount to pay now ({inr(min)} to {inr(max)})
+      </label>
+      <div className="flex gap-2">
+        <span className="relative min-w-0 flex-1">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400">₹</span>
+          <input
+            id={`part-${invoice.id}`}
+            inputMode="decimal"
+            autoComplete="off"
+            value={value}
+            onChange={(e) => setValue(e.target.value.trim())}
+            aria-invalid={error ? true : undefined}
+            className="h-11 w-full rounded-lg border border-stone-300 bg-white pl-7 pr-3 text-[15px] tabular-nums focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-line-strong dark:bg-surface"
+          />
+        </span>
+        <button type="submit" className={`${secondaryBtn} h-11`} disabled={disabled || !value || Boolean(error)}>
+          {busy && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />}
+          Pay
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-700 dark:text-red-300">{error}</p>}
+    </form>
   );
 }

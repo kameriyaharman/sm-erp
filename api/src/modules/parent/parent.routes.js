@@ -9,7 +9,8 @@ import { getParentHome } from './parent.service.js';
 import * as children from './parent.children.service.js';
 
 const router = Router();
-router.use(authenticate, authorize(ROLES.PARENT));
+// Family portal: parents (their children) and students (themselves only; the same screens with one child).
+router.use(authenticate, authorize(ROLES.PARENT, ROLES.STUDENT));
 
 const noStore = (res) => res.set('Cache-Control', 'private, no-store');
 
@@ -18,7 +19,7 @@ router.get('/home', async (req, res) => {
   noStore(res).json({ data: await getParentHome(req.auth) });
 });
 
-// One child (must be the caller's child, else 404).
+// One child (must be the caller's child, or the student themself, else 404).
 router.get('/children/:studentId/fees', validate({ params: studentParams }), async (req, res) => {
   noStore(res).json({ data: await children.childFees(req.auth, req.valid.params.studentId) });
 });

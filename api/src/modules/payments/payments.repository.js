@@ -15,6 +15,18 @@ export async function isGuardianOf(db, parentUserId, studentId) {
   return rows.length > 0;
 }
 
+/** Is this user the student themself (student portal login)? */
+export async function isStudentSelf(db, userId, studentId) {
+  const { rows } = await db.query(
+    `SELECT 1 FROM student_profiles WHERE id = $2 AND user_id = $1 AND deleted_at IS NULL`,
+    [userId, studentId],
+  );
+  return rows.length > 0;
+}
+
+/** Sample orders of the demo school (scripts/seed-demo-payments.js): never sent to Razorpay. */
+export const isDemoGatewayOrder = (gatewayOrderId) => String(gatewayOrderId ?? '').startsWith('order_DEMO');
+
 // ---------------------------------------------------------------- create order
 
 export async function getInvoicesForOrder(db, invoiceIds) {
@@ -53,10 +65,10 @@ export async function insertOrder(db, order) {
   await db.query(
     `INSERT INTO payment_orders
             (id, tenant_id, branch_id, student_id, gateway, gateway_order_id, receipt_ref, amount, currency,
-             idempotency_key, created_by, expires_at)
-     VALUES ($1, $2, $3, $4, 'razorpay', $5, $6, $7, 'INR', $8, $9, now() + make_interval(mins => $10))`,
+             idempotency_key, created_by, expires_at, gateway_key_id, gateway_mode)
+     VALUES ($1, $2, $3, $4, 'razorpay', $5, $6, $7, 'INR', $8, $9, now() + make_interval(mins => $10), $11, $12)`,
     [order.id, order.tenantId, order.branchId, order.studentId, order.gatewayOrderId, order.receiptRef,
-      order.amount, order.idempotencyKey ?? null, order.createdBy, order.ttlMinutes],
+      order.amount, order.idempotencyKey ?? null, order.createdBy, order.ttlMinutes, order.gatewayKeyId ?? null, order.gatewayMode ?? null],
   );
   const { rowCount } = await db.query(
     `INSERT INTO payment_order_items (order_id, invoice_id, branch_id, amount)
@@ -87,15 +99,21 @@ export async function getOrder(db, orderId) {
 
 // ---------------------------------------------------------------- webhook (all inside one transaction)
 
-/** Returns the new row id, or null if this event id was already recorded (duplicate delivery). */
+/**
+ * Returns the new row id, or null if this event id was already recorded (duplicate delivery).
+ * Events on a school's URL are unique per school; the legacy (platform) URL keeps one row per event id.
+ */
 export async function recordWebhookEvent(db, event) {
+  const conflict = event.tenantId
+    ? 'ON CONFLICT (gateway, tenant_id, event_id) WHERE tenant_id IS NOT NULL DO NOTHING'
+    : 'ON CONFLICT (gateway, event_id) WHERE tenant_id IS NULL DO NOTHING';
   const { rows } = await db.query(
     `INSERT INTO payment_webhook_events
-            (gateway, event_id, event_type, gateway_order_id, gateway_payment_id, outcome, payload)
-     VALUES ('razorpay', $1, $2, $3, $4, 'received', $5)
-     ON CONFLICT (gateway, event_id) DO NOTHING
+            (gateway, tenant_id, event_id, event_type, gateway_order_id, gateway_payment_id, outcome, payload)
+     VALUES ('razorpay', $1, $2, $3, $4, $5, 'received', $6)
+     ${conflict}
      RETURNING id`,
-    [event.eventId, event.eventType, event.orderId ?? null, event.paymentId ?? null, event.payload],
+    [event.tenantId ?? null, event.eventId, event.eventType, event.orderId ?? null, event.paymentId ?? null, event.payload],
   );
   return rows[0]?.id ?? null;
 }
@@ -107,15 +125,36 @@ export async function setWebhookOutcome(db, id, outcome, detail, paymentOrderId)
   );
 }
 
-export async function lockOrderByGatewayId(db, gatewayOrderId) {
-  const { rows } = await db.query(
-    `SELECT o.*, o.amount::text AS amount
-       FROM payment_orders o
-      WHERE o.gateway = 'razorpay' AND o.gateway_order_id = $1
-      FOR UPDATE OF o`,
-    [gatewayOrderId],
-  );
+/**
+ * Locks the order a webhook refers to, but only inside the webhook's scope (see webhookScope):
+ * a school's URL only reaches that school's orders made with the signing account; the legacy URL
+ * only reaches platform-account orders.
+ */
+export async function lockOrderByGatewayId(db, gatewayOrderId, scope) {
+  const { rows } = scope.tenantId
+    ? await db.query(
+      `SELECT o.*, o.amount::text AS amount
+         FROM payment_orders o
+        WHERE o.gateway = 'razorpay' AND o.gateway_order_id = $1 AND o.tenant_id = $2 AND o.gateway_key_id = $3
+        FOR UPDATE OF o`,
+      [gatewayOrderId, scope.tenantId, scope.keyId],
+    )
+    : await db.query(
+      `SELECT o.*, o.amount::text AS amount
+         FROM payment_orders o
+        WHERE o.gateway = 'razorpay' AND o.gateway_order_id = $1 AND (o.gateway_key_id IS NULL OR o.gateway_key_id = $2)
+        FOR UPDATE OF o`,
+      [gatewayOrderId, scope.platformKeyId ?? null],
+    );
   return rows[0] ?? null;
+}
+
+export async function markOrderFailed(db, orderId, { paymentId, reason }) {
+  await db.query(
+    `UPDATE payment_orders SET status = 'failed', failure_reason = left($2, 300)
+      WHERE id = $1 AND status IN ('created', 'failed') AND gateway_payment_id IS NULL`,
+    [orderId, `${reason} [${paymentId}]`],
+  );
 }
 
 /** Order items with the invoices' CURRENT balance, invoices locked so nobody else can pay them concurrently. */

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { env } from '../../config/env.js';
 import { AppError } from '../../errors/AppError.js';
 import { withTransaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import * as repo from './auth.repository.js';
+import { normaliseLoginId, passwordProblems, phone10 } from './login-id.js';
 import {
   accessTokenTtlSeconds,
   createRefreshToken,
@@ -29,6 +31,9 @@ function toPublicUser(user) {
     username: user.username,
     firstName: user.first_name,
     lastName: user.last_name,
+    // A temporary password from the school office: the app must show "Set your password" first
+    // (every other API call answers 403 PASSWORD_CHANGE_REQUIRED until then).
+    mustChangePassword: Boolean(user.must_change_password),
     ...(user.school_name !== undefined && { schoolName: user.school_name, branchName: user.branch_name }),
   };
 }
@@ -69,23 +74,41 @@ export async function login({ tenantCode, identifier, password, ip, userAgent })
     tenantId = tenant.id;
   }
 
-  const user = await repo.findUserForLogin(tenantId, identifier);
-  if (!user) {
+  const candidates = await repo.findLoginCandidates(tenantId, normaliseLoginId(identifier));
+  if (candidates.length === 0) {
     await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     throw invalidCredentials();
   }
 
-  // Locked accounts are rejected before the password is checked, so a lock
-  // actually stops guessing instead of just hiding the result.
-  if (user.locked_until && user.locked_until > new Date()) {
-    throw AppError.locked('Too many failed attempts. Account is temporarily locked; try again later.');
-  }
-
-  const passwordOk = await bcrypt.compare(password, user.password_hash);
-  if (!passwordOk) {
-    await repo.recordFailedLogin(user.id, env.MAX_FAILED_LOGINS, env.LOCKOUT_MINUTES);
-    logger.warn('Failed login', { userId: user.id, ip });
-    throw invalidCredentials();
+  let user;
+  if (candidates.length === 1) {
+    [user] = candidates;
+    // Locked accounts are rejected before the password is checked, so a lock
+    // actually stops guessing instead of just hiding the result.
+    if (user.locked_until && user.locked_until > new Date()) {
+      throw AppError.locked('Too many failed attempts. Account is temporarily locked; try again later.');
+    }
+    const passwordOk = await bcrypt.compare(password, user.password_hash);
+    if (!passwordOk) {
+      await repo.recordFailedLogin(user.id, env.MAX_FAILED_LOGINS, env.LOCKOUT_MINUTES);
+      logger.warn('Failed login', { userId: user.id, ip });
+      throw invalidCredentials();
+    }
+  } else {
+    // One phone number / id, several accounts (e.g. a parent with two accounts): the password picks one.
+    const open = candidates.filter((c) => !(c.locked_until && c.locked_until > new Date()));
+    if (open.length === 0) throw AppError.locked('Too many failed attempts. Account is temporarily locked; try again later.');
+    for (const c of open) {
+      if (await bcrypt.compare(password, c.password_hash)) {
+        user = c;
+        break;
+      }
+    }
+    if (!user) {
+      await Promise.all(open.map((c) => repo.recordFailedLogin(c.id, env.MAX_FAILED_LOGINS, env.LOCKOUT_MINUTES)));
+      logger.warn('Failed login', { userIds: open.map((c) => c.id), ip });
+      throw invalidCredentials();
+    }
   }
 
   // Status checks come after the password check: only the real owner learns the account state.
@@ -167,4 +190,44 @@ export async function getCurrentUser(userId) {
   const user = await repo.findPublicUser(userId);
   if (!user) throw AppError.notFound('User not found', 'USER_NOT_FOUND');
   return toPublicUser(user);
+}
+
+/**
+ * POST /auth/change-password: the signed-in user sets a new password (also the forced
+ * "Set your password" step after a temporary password). Every other session of the user ends;
+ * a fresh session is returned for this device.
+ */
+export async function changePassword({ userId, currentPassword, newPassword, ip, userAgent }) {
+  const user = await repo.findUserForPasswordChange(userId);
+  if (!user) throw AppError.unauthorized('Account is no longer active', 'ACCOUNT_INACTIVE');
+  if (user.locked_until && user.locked_until > new Date()) {
+    throw AppError.locked('Too many wrong passwords. Your account is locked for a while; try again later.');
+  }
+
+  const currentOk = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!currentOk) {
+    await repo.recordFailedLogin(user.id, env.MAX_FAILED_LOGINS, env.LOCKOUT_MINUTES);
+    throw new AppError(422, 'CURRENT_PASSWORD_WRONG', 'Your current password is not correct.', { body: { currentPassword: ['Not correct'] } });
+  }
+  const problems = passwordProblems(newPassword, {
+    loginIds: [user.email?.split('@')[0], user.username, phone10(user.phone), user.admission_number],
+  });
+  if (problems.length > 0) {
+    throw new AppError(422, 'WEAK_PASSWORD', problems[0], { body: { newPassword: problems } });
+  }
+  if (await bcrypt.compare(newPassword, user.password_hash)) {
+    throw new AppError(422, 'WEAK_PASSWORD', 'Choose a password different from the current one.', { body: { newPassword: ['Same as the current password'] } });
+  }
+
+  const hash = await bcrypt.hash(newPassword, 12);
+  const { tokens } = await withTransaction(async (db) => {
+    // End every other session, open a fresh one for this device, then void older access tokens.
+    await db.query(`UPDATE auth_refresh_tokens SET revoked_at = now(), revoked_reason = 'password_changed' WHERE user_id = $1 AND revoked_at IS NULL`, [user.id]);
+    const session = await issueSession(db, user, { ip, userAgent });
+    await repo.setOwnPassword(db, user.id, hash, jwt.decode(session.tokens.accessToken).iat);
+    return session;
+  });
+  logger.info('Password changed', { userId: user.id, role: user.role, wasTemporary: Boolean(user.must_change_password) });
+  const fresh = await repo.findPublicUser(user.id);
+  return { user: toPublicUser(fresh), ...tokens };
 }

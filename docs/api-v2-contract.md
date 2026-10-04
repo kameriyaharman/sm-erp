@@ -290,7 +290,7 @@ Days without a register are omitted. `percentage` = (present + late + 0.5·halfD
 
 ---
 
-## 11. Parent app (parent role; `:studentId` must be one of the parent's children, else 404)
+## 11. Parent app (parent role; `:studentId` must be one of the parent's children, else 404. The student role uses the same endpoints for itself only, see 15)
 
 ### GET /parent/home (existing): now also fills
 - `timetable`: `{ "1": Period[], ... "6": Period[] }` from the section timetable (Period = `{ id, start, end, kind, subject, teacher?, room? }` as in `web/src/features/parent/types.ts`; `subject` = label).
@@ -398,6 +398,162 @@ of their children is in the homework's section, else **404**. Other branch/tenan
 web app downloads with `fetch` + blob (a plain `<a href>` sends no Authorization header).
 
 #### DELETE /homework/attachments/:id (STAFF: the homework's creator, or ADMINS) → 204
+
+---
+
+## 15. Online payments with the school's own Razorpay, and portal logins (migration `013`)
+
+Each school connects its **own** Razorpay account; money goes to the school's bank account. Key secret and webhook
+secret are encrypted (AES-256-GCM, `SETTINGS_ENCRYPTION_KEY`, bound to school + column) and never returned or logged.
+Which account takes a payment: the branch's own account if it has one, else the school-wide account, else the platform
+`RAZORPAY_*` env account (backward compatibility), else online payment is off. Test keys (`rzp_test_`) are allowed in
+production only for school codes in `PAYMENTS_TEST_TENANTS` (default `demo`); the mode is shown everywhere and test
+receipts say "TEST MODE, no real money".
+
+### 15.1 Settings: `/settings/payments` (ADMINS; owner = school-wide + any branch, branch admin = own branch)
+
+#### GET /settings/payments
+```json
+{ "data": {
+  "schoolCode": "demo", "schoolName": "Demo Public School",
+  "webhook": { "url": "https://<web>/api/v1/finance/webhook/demo", "events": ["payment.captured", "payment.failed", "order.paid"] },
+  "canEditSchool": true, "testKeysAllowed": true, "encryptionReady": true,
+  "platform": { "configured": false, "mode": null },
+  "school": Settings | null,
+  "branches": [ { "id", "name", "code", "isHeadOffice", "settings": Settings | null,
+                  "effective": { "source": "branch|school|platform|none", "enabled": true, "mode": "test|live|null" } } ]
+} }
+```
+`Settings = { id, branchId, provider: "razorpay", keyId, mode, keySecretSet: true, keySecretLast4, webhookSecretSet: true,
+webhookSecretLast4, enabled, allowPartial, minAmount: "500.00", verifiedAt, verifyError, lastWebhookAt, updatedAt, updatedBy: { name } | null }`.
+The webhook URL is built from `PARENT_PORTAL_URL` (origin), else the request host.
+
+#### PUT /settings/payments
+`{ branchId?: uuid|null, keyId, keySecret?, webhookSecret?, enabled?, allowPartial?, minAmount? }` (`.strict()`).
+`branchId` omitted = caller's level (owner: school-wide, branch admin: own branch); `null` = school-wide (owner only, else
+403 `OWNER_ONLY`). Secrets are write-only: omit to keep the saved ones; required on first save (400), `keySecret` required
+when `keyId` changes, `webhookSecret` when the mode changes. Changed keys are checked with Razorpay first
+(`GET /v1/orders?count=1`): rejected -> **422 `INVALID_KEYS`**, nothing saved; unreachable -> saved, not verified, stays off.
+`enabled: true` only takes effect once the keys are verified (else `warning` in the response). 422 `TEST_KEYS_NOT_ALLOWED`.
+Returns the GET body (+ `warning: string|null`).
+
+#### POST /settings/payments/test `{ branchId?: uuid|null }`
+→ `{ data: { ok, reason: null|"invalid_keys"|"gateway_error"|"unreadable", message, mode, verifiedAt } }` (always 200).
+Keys Razorpay rejects also switch online payment off. 404 `NOT_CONFIGURED`.
+
+#### DELETE /settings/payments?branchId= → `{ data: { openOrders } }` (disconnect: deletes the keys; settled payments stay).
+
+### 15.2 Webhook (public, signature-checked)
+`POST /finance/webhook/:tenantCode` with the raw body. The `X-Razorpay-Signature` must match the webhook secret of one
+of that school's saved accounts (enabled or not), and the event only reaches that school's orders created with that
+account's key id: another school's URL/secret can never settle it (`200 {status:"unknown_order"}`). Bad signature 400
+`INVALID_SIGNATURE`; unknown school 404. Events: `payment.captured` / `order.paid` settle (receipt + ledger, idempotent per
+school + event id and per payment); `payment.failed` marks an open order `failed` with the bank's reason (a later
+capture on the same order still settles it). Responses: `{ status: "processed"|"already_paid"|"payment_failed"|"needs_review"|"ignored"|"unknown_order"|"duplicate" }`.
+The legacy `POST /finance/webhook` keeps working for the platform env account only.
+
+### 15.3 Family portal fees
+`GET /parent/children/:id/fees` → `onlinePayment: { enabled, mode: "test"|"live"|null, keyId, allowPartial, minAmount }`.
+`POST /finance/create-order` uses the student's branch account; Checkout `key` = that account's key id. Parents/students:
+part payments only if `allowPartial` (422 `PARTIAL_NOT_ALLOWED`) and ≥ `minAmount` (422 `AMOUNT_TOO_SMALL`, `details.minAmount`).
+503 `PAYMENTS_DISABLED` when off. Roles: parent, **student** (own invoices), admins.
+
+### 15.4 Online payments console (ADMINS)
+- `GET /finance/online-payments?status=created|paid|failed|expired|needs_review&from=&to=&search=&branchId=&page=&limit=`
+  (`expired` = still `created` after `expires_at`; dates by school time zone; search: student, admission no., Razorpay
+  order/payment id, receipt no.) → `{ data: [ { id, status, amount, currency, mode, createdAt, paidAt, expiresAt,
+  gatewayOrderId, gatewayPaymentId, isDemo, receipt: {id, number, amount}|null, reason, student: {id, name,
+  admissionNumber, classLabel}, branch: {id, name}, paidBy: {name, role}|null } ], meta: paging }`
+- `GET /finance/online-payments/summary?branchId=` → `{ today: {amount, count}, month: {amount, count}, failedThisMonth,
+  needsReview, inProgress, gateway: { source, enabled, mode } }` (collected = receipts of online orders).
+- `GET /finance/online-payments/:id` → row + `reviewReason, failureReason, items[], events[ { type, source:
+  "webhook"|"reconcile", outcome, detail, paymentId, method, at } ], canReconcile`.
+- `POST /finance/online-payments/:id/reconcile` → asks Razorpay (`GET /v1/orders/:id/payments`, with the keys the order
+  was made with) and settles a captured payment through the webhook's idempotent path. `{ data: { outcome:
+  "settled"|"already_paid"|"authorized"|"failed"|"no_payment"|"needs_review", message, settled: [], order } }`.
+  409 `DEMO_ORDER` (demo samples), 409 `GATEWAY_GONE` (account disconnected).
+
+### 15.5 Portal logins: `/portal-access` (ADMINS; branch admin: own branch's students, parents with a child there)
+Login ids: **parent** = mobile number in any form (`9810055555`, `+91 98100 55555`, `09810055555`) or email;
+**student** = admission number (case-insensitive) or username. `POST /auth/login` accepts all of these; if one phone
+matches several parent accounts the password picks the account.
+- `GET /portal-access?type=parent|student&search=&classId=&sectionId=&status=none|temporary|active|locked|inactive&page=&limit=`
+  → `{ data: [ { userId, type, name, loginId, status, lastLoginAt, passwordSetAt, student?: {id, admissionNumber,
+  username, classLabel, branchName}, phone?, email?, children?: [ {id, name, admissionNumber, classLabel} ] } ],
+  meta: { schoolCode, schoolName, page, limit, total, totalPages, counts: { none, temporary, active, locked, inactive } } }`.
+  `none` = never given a password (`users.password_set_at IS NULL`).
+- `POST /portal-access/:userId/reset { password?, mustChange?=true }` → `{ data: { schoolCode, schoolName, portalUrl,
+  mustChangePassword, slip: { userId, type, name, loginId, alsoWorks[], classLabel, children?, password } } }`.
+  Without `password` a temporary one (`xxxx-xxxx-xxxx`, ~70 bits) is generated, returned **once** (`slip.password`;
+  `null` for an admin-typed one) and `must_change_password` is set. Ends all the user's sessions. 422 `WEAK_PASSWORD`,
+  409 `ACCOUNT_INACTIVE`, 404 for staff or out of scope.
+- `POST /portal-access/bulk { type, classId, sectionId?, onlyWithoutLogin?=true }` → `{ data: { schoolCode, schoolName,
+  portalUrl, classLabel, issued, skipped, slips: [slip] } }` (max 300).
+
+### 15.6 Forced password change
+Login / `GET /auth/me` return `user.mustChangePassword`. While it is true every endpoint outside `/api/v1/auth/`
+answers **403 `PASSWORD_CHANGE_REQUIRED`**. `POST /auth/change-password { currentPassword, newPassword, client? }`
+(any signed-in role) → same body as login (new session; other sessions and older tokens end). 422
+`CURRENT_PASSWORD_WRONG` (counts toward lockout), 422 `WEAK_PASSWORD` (≥ 8 chars, a letter and a digit, not the login
+id). The web app sends such users to `/set-password`.
+
+## 14. Fee setup and day book (migration `012`) (ADMINS)
+
+Design and invariants: `docs/accounts.md`. Branch: branch_admin = own branch; super_admin = `branchId` or the head
+office. Money in/out as rupee strings; internally integer paise.
+
+### Fee heads
+- `GET /fees/heads?branchId=` → `{ data: [ { id, name, code, description, type: "recurring"|"one_time", defaultFrequency, refundable, optional, displayOrder, isActive, usage: { classes, allocations } } ] }`
+- `POST /fees/heads { name, code (upper-cased, A-Z0-9_-), type, defaultFrequency? (recurring only, default quarterly), refundable?, optional?, description?, displayOrder?, branchId? }` → 201. Duplicate → 409 `HEAD_CODE_TAKEN` / `HEAD_NAME_TAKEN`.
+- `PATCH /fees/heads/:id` same fields optional + `isActive`. Deactivating a head in a current/future class structure → 409 `HEAD_IN_USE`.
+- `DELETE /fees/heads/:id` → 204 only if never used anywhere, else 409 `HEAD_IN_USE`.
+
+### Class-wise structure
+- `GET /fees/structure/overview?academicYearId=` → `{ data: { academicYear, years: [...], classes: [ { id, name, annual, heads, installments, students, studentsSetUp } ] } }`
+- `GET /fees/structure?classId=&academicYearId=` (default current year) →
+  `{ data: { class, academicYear, students, rows: [ { id, feeHead: {id,name,code}, frequency, installmentNo, label, amount, dueDate, allocations, invoiced } ], heads: [...], totals: { annual, byInstallment } } }`
+- `PUT /fees/structure { classId, academicYearId?, rows: [ { feeHeadId, frequency, installmentNo, label?, amount, dueDate } ], dryRun?: false }`
+  replaces the class+year structure (rows matched by head + instalment no.) → `{ data: structure, impact: { rowsAdded, rowsChanged, rowsRemoved, allocationsUpdated, studentsUpdated, allocationsRemoved, invoicedUnchanged }, dryRun }`.
+  Changed rows update **un-invoiced** allocations only (amount, due date, their concession re-computed); removed rows switch off
+  un-invoiced allocations. Invoices never change. `dryRun: true` reports the impact and changes nothing.
+  Bad rows → 422 `INVALID_STRUCTURE` (`details.issues: [ { path, message } ]`): one frequency per head, instalment no. ≤ the
+  frequency's count, no duplicates, due date in the year (up to 3 months before it starts).
+- `GET /fees/structure/schedule?frequency=&amount=|total=&dueDay=10&academicYearId=` → `{ data: { rows: [ { installmentNo, label, dueDate, amount } ], total } }`
+  (quarterly from April on day 10 = 10 Apr / Jul / Oct / Jan; `total` is split exactly, whole rupees kept whole).
+- `POST /fees/structure/copy { fromClassId, fromAcademicYearId?, toClassId, toAcademicYearId?, overwrite?: false }` → 201 `{ data, impact }`;
+  due dates shift by the months between the two years. Target has a structure and no overwrite → 409 `STRUCTURE_EXISTS`; empty source → 422 `SOURCE_EMPTY`.
+- `GET /fees/structure/apply-preview?classId=&academicYearId=` → `{ data: { students, upToDate, willChange, withInvoices, newAllocations, gross, concession, net, rows: [ { studentId, name, admissionNumber, section, hasInvoices, status: new|partial|up_to_date, newAllocations, gross, concession, net } ] } }`
+- `POST /fees/structure/apply { classId, academicYearId?, studentIds? }` → `{ data: { created, students, net, structure } }`: creates the
+  missing `student_fee_allocations` (enrolled students of the class), with the students' concession rules applied. Idempotent.
+
+### Concessions
+- `GET /students/:id/fee-concession?academicYearId=` → `{ data: { student, academicYear, concessions: [ { id, feeHead|null, type, value, reason, approvedBy, recordedBy, approvedAt } ], allocations: [ { id, feeHead, installmentNo, label, dueDate, baseAmount, concessionType, concessionAmount, netAmount, invoiced, invoiceNumber } ], totals } }`
+- `PUT /students/:id/fee-concession { academicYearId?, approvedBy (required when any), concessions: [ { feeHeadId: uuid|null (= all heads), type: "percentage", value: 0-100 } | { type: "flat", value: rupees per instalment } | { type: "full_waiver" }, reason } ] }`
+  replaces the student's rules for the year and re-applies them to **un-invoiced** allocations (head rule beats all-heads rule)
+  → `{ data, impact: { allocationsUpdated, invoicedUnchanged, unInvoicedBefore, unInvoicedAfter } }`. Empty list = no concession.
+
+### Accounts and day book
+- `GET /accounts?branchId=` → `{ data: [ { id, name, type: cash|bank|upi, details, isDefault, defaultFor, isActive, openingBalance, openingDate, balance, entries, firstEntryDate, lastEntryDate } ], meta: { branch, today, totalBalance } }`
+- `POST /accounts { name, type, details?, openingBalance, openingDate, isDefault?, branchId? }` → 201 (409 `ACCOUNT_EXISTS`).
+- `PATCH /accounts/:id { name?, details?, openingBalance?, openingDate?, isActive?, isDefault?: true }`. 422 `OPENING_AFTER_ENTRIES` (opening date after the first entry), `DEFAULT_ACCOUNT` (deactivating the default), `ACCOUNT_INACTIVE`.
+- `POST /accounts/transfer { fromAccountId, toAccountId, amount, date, description?, reference? }` → 201 `{ data: { transferId, voucherNo, amount, date, out: entry, in: entry } }` (contra; not income or expense).
+- `GET /accounts/summary?month=YYYY-MM | from=&to=` → `{ data: { from, to, income: [ {category, amount} ], expense: [...], feeRefunds, transfers, totalIncome, totalExpense, net, byAccount } }` (fee refunds reduce fee income; transfers excluded).
+- `GET /daybook?date=&accountId=` (default today, school time zone) → `{ data: { date, today, branch: { name, schoolName, address, phone }, opening, totalIn, totalOut, closing, entries: [ entry + { in, out, balance } ], byAccount: [ { account, opening, in, out, closing } ] } }`.
+  `opening + totalIn - totalOut = closing`; each entry's `balance` is the running balance.
+- `GET /daybook/range?from=&to=&accountId=` (≤ 1 year) → `{ data: { opening, totalIn, totalOut, closing, days: [ { date, opening, in, out, closing, entries } ], byAccount } }`; each day opens with the previous day's closing.
+- `GET /ledger?from=&to=&direction=&category=&accountId=&source=&search=&includeDeleted=&page=&limit=` → `{ data: [ entry ], meta: { page, limit, total, totalPages, totalIn, totalOut } }`
+- `GET /ledger/export.csv?from=&to=&accountId=` → `text/csv` attachment: header, opening row, one row per entry with running balance, total/closing row.
+- `POST /ledger { direction, category, amount, date, accountId?, paymentMode, party?, description, reference?, branchId? }` → 201 entry.
+  `in`: categories `admission, donation, transport, canteen, grant, interest, other_income` (`fees` only via fee collection → 400).
+  `out`: expense categories; written as an `expenses` row (shows on the Expenses page). Default account by mode (cash → default
+  cash account, else default bank). 422 `MODE_ACCOUNT_MISMATCH`, `BEFORE_OPENING_DATE`, `FUTURE_DATE`, `ACCOUNT_INACTIVE`.
+- `DELETE /ledger/:id { reason (3-255) }` → 204 soft delete (kept with reason for `includeDeleted`); a transfer deletes both legs;
+  an expense entry deletes its expense. Fee receipt / refund entries → 409 `FEE_ENTRY_LOCKED`; already deleted → 409 `ALREADY_DELETED`.
+- Entry: `{ id, date, postedAt, voucherNo, direction, category, amount, party, description, paymentMode, reference, account: {id,name,type}, source: fee_receipt|fee_refund|fee_cancel|expense|manual|transfer, online, links: { feeReceiptId, studentId, expenseId, transferId, paymentOrderId, reversesEntryId }, canDelete, createdBy, deleted? }`
+
+### Changed (additive)
+- `/expenses`: categories + `rent, printing, canteen, bank_charges, taxes`; rows + `voucherNo`, `account`; `POST` accepts `accountId`,
+  rejects a future date (422 `FUTURE_DATE`) or a date before the account's opening date; `DELETE` accepts an optional `{ reason }`.
 
 ---
 

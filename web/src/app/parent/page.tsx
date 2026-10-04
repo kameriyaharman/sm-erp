@@ -2,7 +2,7 @@
 
 import { Suspense } from 'react';
 import ParentHome, { urgentChildId } from '@/features/parent/ParentHome';
-import { ErrorBlock, Skeleton, useParentHome, useSelectedChild } from '@/features/parent/ParentLayout';
+import { FAMILY, ErrorBlock, Skeleton, useParentHome, useSelectedChild } from '@/features/parent/ParentLayout';
 import RequireAuth from '@/components/RequireAuth';
 
 function Home() {
@@ -30,7 +30,7 @@ function Home() {
 
 export default function ParentHomePage() {
   return (
-    <RequireAuth roles={['parent']} shell={false}>
+    <RequireAuth roles={FAMILY} shell={false}>
       <Suspense>
         <Home />
       </Suspense>

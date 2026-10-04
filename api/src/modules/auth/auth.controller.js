@@ -72,3 +72,9 @@ export async function me(req, res) {
   const user = await authService.getCurrentUser(req.auth.userId);
   res.json({ data: user });
 }
+
+export async function changePassword(req, res) {
+  const { client, currentPassword, newPassword } = req.valid.body;
+  const session = await authService.changePassword({ userId: req.auth.userId, currentPassword, newPassword, ...requestMeta(req) });
+  sendSession(res, client, session);
+}

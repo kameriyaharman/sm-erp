@@ -2,10 +2,11 @@
 
 import { Suspense, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LoaderCircle, LogOut, Phone } from 'lucide-react';
+import Link from 'next/link';
+import { KeyRound, LoaderCircle, LogOut, Phone } from 'lucide-react';
 import RequireAuth from '@/components/RequireAuth';
 import { currentUser, logout } from '@/lib/session';
-import { Avatar, PCard, ParentScreen, SectionTitle, secondaryBtn } from '@/features/parent/ParentLayout';
+import { FAMILY, Avatar, PCard, ParentScreen, SectionTitle, secondaryBtn } from '@/features/parent/ParentLayout';
 import { displayPhone, telHref } from '@/features/parent/format';
 
 function SignOut() {
@@ -34,12 +35,13 @@ function SignOut() {
 
 export default function ProfilePage() {
   return (
-    <RequireAuth roles={['parent']} shell={false}>
+    <RequireAuth roles={FAMILY} shell={false}>
       <Suspense>
         <ParentScreen active="profile" title="Profile" hideSwitcher>
           {({ data }) => {
             const user = currentUser();
             const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || data.parentName;
+            const isStudent = data.viewer === 'student';
             return (
               <>
                 <PCard className="flex items-center gap-4 p-5" aria-label="Your account">
@@ -49,12 +51,14 @@ export default function ProfilePage() {
                   <div className="min-w-0">
                     <p className="truncate text-lg font-semibold">{name}</p>
                     <p className="truncate text-sm text-stone-500 dark:text-stone-400">{user?.email ?? user?.username}</p>
-                    <p className="truncate text-xs text-stone-500 dark:text-stone-400">Parent, {data.schoolName}</p>
+                    <p className="truncate text-xs text-stone-500 dark:text-stone-400">
+                      {isStudent ? 'Student' : 'Parent'}, {data.schoolName}
+                    </p>
                   </div>
                 </PCard>
 
                 <section aria-labelledby="kids">
-                  <SectionTitle id="kids">Your children</SectionTitle>
+                  <SectionTitle id="kids">{isStudent ? 'Your class' : 'Your children'}</SectionTitle>
                   <ul className="flex flex-col gap-3">
                     {data.children.map(({ child }) => (
                       <PCard as="li" key={child.id} className="p-4">
@@ -95,6 +99,9 @@ export default function ProfilePage() {
                     <Phone className="h-4 w-4" aria-hidden /> Call the school office ({data.schoolPhone})
                   </a>
                 )}
+                <Link href="/set-password?next=/parent/profile" className={`${secondaryBtn} h-11 w-full text-[15px]`}>
+                  <KeyRound className="h-4 w-4" aria-hidden /> Change password
+                </Link>
                 <SignOut />
               </>
             );

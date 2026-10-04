@@ -24,6 +24,11 @@ export default function RequireAuth({ roles, children, shell = true }: { roles: 
         router.replace(`/login?next=${encodeURIComponent(pathname)}`);
         return;
       }
+      // Temporary password from the school office: set their own before anything else.
+      if (me.mustChangePassword) {
+        router.replace(`/set-password?next=${encodeURIComponent(pathname)}`);
+        return;
+      }
       if (!roles.includes(me.role)) {
         router.replace(homeFor(me.role));
         return;

@@ -123,7 +123,11 @@ export default function ParentHome({ data, now = new Date(), links: linkOverride
   if (!home) {
     return (
       <ParentShell active="home" childId={null} title={title} subtitle={data.schoolName} unread={unreadNotifications}>
-        <p className="px-5 py-16 text-center text-sm text-stone-500 dark:text-stone-400">No children are linked to your account yet. Contact the school office to link them.</p>
+        <p className="px-5 py-16 text-center text-sm text-stone-500 dark:text-stone-400">
+          {data.viewer === 'student'
+            ? 'Your student record is not linked to this login yet. Ask the school office.'
+            : 'No children are linked to your account yet. Contact the school office to link them.'}
+        </p>
       </ParentShell>
     );
   }
@@ -138,7 +142,7 @@ export default function ParentHome({ data, now = new Date(), links: linkOverride
       {data.children.length > 1 && <ChildSwitcher items={data.children} selectedId={home.child.id} onSelect={selectChild} />}
 
       <div className="flex flex-col gap-7 px-4 pb-6 pt-4 sm:px-6">
-        <UrgentAlerts key={home.child.id} home={home} now={now} schoolPhone={data.schoolPhone} payHref={links.payFees(home.child.id)} />
+        <UrgentAlerts key={home.child.id} home={home} now={now} schoolPhone={data.schoolPhone} payHref={links.payFees(home.child.id)} self={data.viewer === 'student'} />
 
         <section aria-labelledby="quick-actions">
           <h2 id="quick-actions" className="sr-only">
@@ -159,7 +163,7 @@ export default function ParentHome({ data, now = new Date(), links: linkOverride
  * Urgent alerts
  * ========================================================================== */
 
-function UrgentAlerts({ home, now, schoolPhone, payHref }: { home: ChildHome; now: Date; schoolPhone: string | null; payHref: string }) {
+function UrgentAlerts({ home, now, schoolPhone, payHref, self = false }: { home: ChildHome; now: Date; schoolPhone: string | null; payHref: string; /** Student viewing their own portal. */ self?: boolean }) {
   const [absenceAcknowledged, setAbsenceAcknowledged] = useState(false);
   const { child, attendance, fee } = home;
 
@@ -180,12 +184,12 @@ function UrgentAlerts({ home, now, schoolPhone, payHref }: { home: ChildHome; no
         <Alert
           tone="critical"
           icon={UserX}
-          title={`${child.firstName} is marked absent today`}
+          title={self ? 'You are marked absent today' : `${child.firstName} is marked absent today`}
           onDismiss={() => setAbsenceAcknowledged(true)}
           dismissLabel="Mark as seen"
         >
           <p>
-            Marked at {attendance.markedAt ? timeOf(attendance.markedAt) : 'roll call'} by the class teacher. If {child.firstName} is unwell or on leave, please let{' '}
+            Marked at {attendance.markedAt ? timeOf(attendance.markedAt) : 'roll call'} by the class teacher. If {self ? 'you are' : `${child.firstName} is`} unwell or on leave, please let{' '}
             {teacher ? teacher.name : 'the school office'} know.
           </p>
           {callNumber && (
@@ -207,7 +211,7 @@ function UrgentAlerts({ home, now, schoolPhone, payHref }: { home: ChildHome; no
         <Alert tone="critical" icon={IndianRupee} title={`${inr.format(overdue)} fee overdue`}>
           <p>
             {fee.oldestOverdueDate ? `Unpaid since ${shortDate(fee.oldestOverdueDate)}. ` : ''}
-            Total due for {child.firstName}: <span className="font-semibold tabular-nums">{inr.format(due)}</span>. Late fees may apply.
+            Total due{self ? '' : ` for ${child.firstName}`}: <span className="font-semibold tabular-nums">{inr.format(due)}</span>. Late fees may apply.
           </p>
           <Link
             href={payHref}

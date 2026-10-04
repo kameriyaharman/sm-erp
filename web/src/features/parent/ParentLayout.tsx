@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { ArrowLeft, Bell, Bus, CircleAlert, GraduationCap, House, Inbox, User, Wallet } from 'lucide-react';
-import { apiGet } from '@/lib/session';
+import { apiGet, type Role } from '@/lib/session';
 import type { ChildHome, ChildSummary, ParentHomeData, SchoolNotice } from './types';
 
 /* ============================================================================
@@ -17,6 +17,9 @@ type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 export type ParentTab = 'home' | 'fees' | 'academics' | 'bus' | 'profile';
 
 export const ACCENT = '#2E44C4';
+
+/** Roles that use the family portal: parents (their children) and students (themselves). */
+export const FAMILY: Role[] = ['parent', 'student'];
 
 /* ------------------------------------------------------------- data caching */
 

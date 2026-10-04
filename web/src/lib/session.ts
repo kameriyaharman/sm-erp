@@ -20,6 +20,8 @@ export interface SessionUser {
   lastName: string | null;
   schoolName?: string | null;
   branchName?: string | null;
+  /** Signed in with a temporary password from the school office: must set their own first (/set-password). */
+  mustChangePassword?: boolean;
 }
 
 export const API_BASE = '/api/v1';
@@ -164,10 +166,39 @@ export function homeFor(role: Role): string {
     case 'teacher':
       return '/teacher/attendance';
     case 'parent':
+    case 'student':
+      // Students use the family portal, seeing only themselves.
       return '/parent';
     default:
       return '/no-access';
   }
+}
+
+/**
+ * Sets a new password for the signed-in user (also the forced step after a temporary password).
+ * The API ends every other session and returns a fresh one for this tab.
+ */
+export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<SessionUser> {
+  const token = await getAccessToken();
+  if (!token) throw new AuthError('UNAUTHENTICATED', 'Your session has ended. Please sign in again.', 401);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/change-password`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ currentPassword, newPassword, client: 'web' }),
+    });
+  } catch {
+    throw new AuthError('NETWORK_ERROR', 'Could not reach the server. Check your connection and try again.');
+  }
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = res.status === 429 ? 'Too many attempts. Try again in a few minutes.' : payload?.error?.message ?? 'Could not change the password.';
+    throw new AuthError(payload?.error?.code ?? 'HTTP_ERROR', message, res.status);
+  }
+  store(payload.data.accessToken, payload.data.user);
+  return payload.data.user as SessionUser;
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
