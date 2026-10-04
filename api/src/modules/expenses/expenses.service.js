@@ -1,6 +1,7 @@
-import { pool } from '../../db/pool.js';
+import { pool, withTransaction } from '../../db/pool.js';
 import { fromPaise, toPaise } from '../../utils/money.js';
-import { assertStaffAccess, pageMeta, resolveWriteBranch, staffScope } from '../shared/access.js';
+import { assertStaffAccess, pageMeta, resolveWriteBranch, staffScope, unprocessable } from '../shared/access.js';
+import * as accountsRepo from '../accounts/accounts.repository.js';
 import { monthRange, monthsBetween } from '../shared/school-ops.helpers.js';
 import * as repo from './expenses.repository.js';
 
@@ -16,6 +17,9 @@ function mapExpense(e) {
     reference: e.reference,
     createdBy: { name: e.created_by_name || null },
     createdAt: e.created_at,
+    // Day book posting (see docs/accounts.md): every expense is an "out" entry with a voucher.
+    voucherNo: e.voucher_no ?? null,
+    account: e.account_id ? { id: e.account_id, name: e.account_name } : null,
   };
 }
 
@@ -33,16 +37,36 @@ export async function listExpenses(auth, { branchId, ...filters }) {
   };
 }
 
+/**
+ * Records an expense. The expenses trigger posts it to the day book in the same transaction
+ * (account = `accountId`, else the branch's Cash account for cash, else its Bank account).
+ */
 export async function createExpense(auth, input) {
   const { tenantId, branchId } = await resolveWriteBranch(auth, input.branchId);
-  const id = await repo.insertExpense(pool, { ...input, amount: fromPaise(input.amount), tenantId, branchId, createdBy: auth.userId });
+  const id = await withTransaction(async (db) => {
+    const ctx = await accountsRepo.getBranchContext(db, branchId);
+    if (input.expenseDate > ctx.today) throw unprocessable('FUTURE_DATE', 'The date cannot be in the future', { expenseDate: input.expenseDate });
+    const accountId =
+      input.accountId ??
+      (await accountsRepo.defaultAccountId(db, { tenantId, branchId, kind: input.paymentMode === 'cash' ? 'cash' : 'bank', date: input.expenseDate }));
+    const account = await accountsRepo.getAccount(db, accountId);
+    assertStaffAccess(auth, account?.branch_id === branchId ? account : null, 'Account not found', 'ACCOUNT_NOT_FOUND');
+    if (!account.is_active) throw unprocessable('ACCOUNT_INACTIVE', `“${account.name}” is inactive`);
+    if ((input.paymentMode === 'cash') !== (account.account_type === 'cash')) {
+      throw unprocessable('MODE_ACCOUNT_MISMATCH', input.paymentMode === 'cash' ? `Cash must be paid from a cash account, not “${account.name}”` : `This payment cannot come from the cash account “${account.name}”`);
+    }
+    if (input.expenseDate < account.opening_date) {
+      throw unprocessable('BEFORE_OPENING_DATE', `“${account.name}” starts on ${account.opening_date}; pick a later date`, { openingDate: account.opening_date });
+    }
+    return repo.insertExpense(db, { ...input, accountId, amount: fromPaise(input.amount), tenantId, branchId, createdBy: auth.userId });
+  });
   return mapExpense(await repo.getExpense(pool, id));
 }
 
-export async function deleteExpense(auth, id) {
+export async function deleteExpense(auth, id, { reason } = {}) {
   const row = await repo.getExpense(pool, id);
   assertStaffAccess(auth, row, 'Expense not found', 'EXPENSE_NOT_FOUND');
-  await repo.softDelete(pool, id);
+  await repo.softDelete(pool, id, { userId: auth.userId, reason: reason ?? 'Deleted from the Expenses page' });
 }
 
 /** Month totals for the current academic year up to this month, zero-filled, oldest first (last `months`). */

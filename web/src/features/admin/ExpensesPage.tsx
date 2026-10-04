@@ -7,18 +7,14 @@ import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page
 import { qs, useApi } from '@/lib/useApi';
 import { apiSend } from '@/lib/session';
 import { formatDate, formatInr, formatMonth, titleCase } from '@/lib/format';
+import Link from 'next/link';
 import { ConfirmModal, FilterBar, errorText, fieldErrors, monthRange, todayLocal, useFlash } from './shared';
-import { EXPENSE_CATEGORIES, EXPENSE_MODES, type Expense, type ExpenseCategory, type ExpensesMeta, type Paged, type Wrapped } from './types';
+import type { Expense, ExpensesMeta, Paged, Wrapped } from './types';
+// Categories come from the day book: every expense is an "out" entry there (see docs/accounts.md).
+import { EXPENSE_CATEGORIES, EXPENSE_MODES, categoryColor, categoryLabel, type ExpenseCategory } from '@/features/accounts/types';
 
-const CATEGORY_COLOR: Record<ExpenseCategory, string> = {
-  salary: 'bg-indigo-500',
-  utilities: 'bg-sky-500',
-  maintenance: 'bg-amber-500',
-  transport: 'bg-emerald-500',
-  supplies: 'bg-violet-500',
-  events: 'bg-pink-500',
-  other: 'bg-slate-400',
-};
+/** An expense row as the API now sends it: + its day-book voucher and account. */
+type ExpenseRow = Omit<Expense, 'category'> & { category: string; voucherNo?: string | null; account?: { id: string; name: string } | null };
 
 export default function ExpensesPage() {
   const params = useSearchParams();
@@ -31,7 +27,7 @@ export default function ExpensesPage() {
   const [category, setCategory] = useState<'' | ExpenseCategory>('');
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
-  const [deleting, setDeleting] = useState<Expense | null>(null);
+  const [deleting, setDeleting] = useState<ExpenseRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -42,7 +38,7 @@ export default function ExpensesPage() {
 
   const range = mode === 'month' && month ? monthRange(month) : mode === 'range' ? { from, to } : { from: '', to: '' };
   const badRange = mode === 'range' && from && to && from > to;
-  const { data, error, loading, reload } = useApi<Paged<Expense, ExpensesMeta>>(badRange ? null : `/expenses${qs({ from: range.from, to: range.to, category, page, limit: 25 })}`);
+  const { data, error, loading, reload } = useApi<Paged<ExpenseRow, Omit<ExpensesMeta, 'byCategory'> & { byCategory: Array<{ category: string; amount: string }> }>>(badRange ? null : `/expenses${qs({ from: range.from, to: range.to, category, page, limit: 25 })}`);
 
   const periodLabel = mode === 'month' && month ? formatMonth(month) : mode === 'range' && (from || to) ? `${from ? formatDate(from) : 'start'} to ${to ? formatDate(to) : 'today'}` : 'All time';
   const total = data ? Number(data.meta.totalAmount) : 0;
@@ -67,7 +63,15 @@ export default function ExpensesPage() {
     <Page wide>
       <PageHeader
         title="Expenses"
-        description="Salaries, bills and purchases paid by the school"
+        description={
+          <>
+            Salaries, bills and purchases paid by the school. Each one is also an “out” entry in the{' '}
+            <Link href="/accounts" className="font-medium text-indigo-700 hover:underline dark:text-indigo-300">
+              Day book
+            </Link>
+            .
+          </>
+        }
         actions={
           <Button icon={<Plus className="h-4 w-4" aria-hidden />} onClick={() => setAdding(true)}>
             Add expense
@@ -85,7 +89,7 @@ export default function ExpensesPage() {
               <p className="text-3xl font-semibold tabular-nums tracking-tight">{formatInr(data.meta.totalAmount)}</p>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 {data.meta.total} expense{data.meta.total === 1 ? '' : 's'}
-                {category ? ` in ${titleCase(category)}` : ''}
+                {category ? ` in ${categoryLabel(category)}` : ''}
               </p>
               {data.meta.byCategory.length > 0 ? (
                 <ul className="mt-5 space-y-3" aria-label="Spending by category">
@@ -93,18 +97,18 @@ export default function ExpensesPage() {
                     const pct = total > 0 ? (Number(c.amount) / total) * 100 : 0;
                     return (
                       <li key={c.category}>
-                        <button type="button" onClick={() => setCategory(category === c.category ? '' : c.category)} className="w-full text-left" aria-pressed={category === c.category}>
+                        <button type="button" onClick={() => setCategory(category === c.category ? '' : (c.category as ExpenseCategory))} className="w-full text-left" aria-pressed={category === c.category}>
                           <span className="mb-1 flex items-center justify-between gap-3 text-sm">
                             <span className="flex items-center gap-2">
-                              <span className={`h-2.5 w-2.5 rounded-sm ${CATEGORY_COLOR[c.category]}`} aria-hidden />
-                              {titleCase(c.category)}
+                              <span className={`h-2.5 w-2.5 rounded-sm ${categoryColor(c.category)}`} aria-hidden />
+                              {categoryLabel(c.category)}
                             </span>
                             <span className="tabular-nums">
                               {formatInr(c.amount)} <span className="text-xs text-slate-500">({pct.toFixed(0)}%)</span>
                             </span>
                           </span>
                           <span className="block h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                            <span className={`block h-full rounded-full ${CATEGORY_COLOR[c.category]}`} style={{ width: `${Math.max(pct, 1)}%` }} />
+                            <span className={`block h-full rounded-full ${categoryColor(c.category)}`} style={{ width: `${Math.max(pct, 1)}%` }} />
                           </span>
                         </button>
                       </li>
@@ -136,7 +140,7 @@ export default function ExpensesPage() {
               <option value="">All categories</option>
               {EXPENSE_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
-                  {titleCase(c)}
+                  {categoryLabel(c)}
                 </option>
               ))}
             </Select>
@@ -171,11 +175,17 @@ export default function ExpensesPage() {
                       <Td>
                         <p className="min-w-[12rem] font-medium">{x.description}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">{[x.vendor, x.reference].filter(Boolean).join(', ') || `Added by ${x.createdBy?.name ?? 'staff'}`}</p>
+                        {x.voucherNo && (
+                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                            <span className="font-mono">{x.voucherNo}</span>
+                            {x.account ? ` · ${x.account.name}` : ''}
+                          </p>
+                        )}
                       </Td>
                       <Td>
                         <Badge>
-                          <span className={`h-2 w-2 rounded-sm ${CATEGORY_COLOR[x.category]}`} aria-hidden />
-                          {titleCase(x.category)}
+                          <span className={`h-2 w-2 rounded-sm ${categoryColor(x.category)}`} aria-hidden />
+                          {categoryLabel(x.category)}
                         </Badge>
                       </Td>
                       <Td className="whitespace-nowrap">{x.paymentMode === 'upi' ? 'UPI' : titleCase(x.paymentMode)}</Td>
@@ -218,7 +228,7 @@ export default function ExpensesPage() {
       <ConfirmModal open={!!deleting} title="Delete this expense?" confirmLabel="Delete" busy={busy} error={deleteError} onConfirm={doDelete} onClose={() => setDeleting(null)}>
         {deleting && (
           <p>
-            <strong>{deleting.description}</strong>, {formatInr(deleting.amount)} on {formatDate(deleting.expenseDate)}, will be removed from the books.
+            <strong>{deleting.description}</strong>, {formatInr(deleting.amount)} on {formatDate(deleting.expenseDate)}, will be removed from the books and the day book (its voucher stays in the audit trail).
           </p>
         )}
       </ConfirmModal>
@@ -236,7 +246,7 @@ interface ExpenseForm {
   reference: string;
 }
 
-function AddExpenseModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (x: Expense) => void }) {
+function AddExpenseModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (x: ExpenseRow) => void }) {
   const empty = (): ExpenseForm => ({ category: '', description: '', amount: '', expenseDate: todayLocal(), paymentMode: 'bank_transfer', vendor: '', reference: '' });
   const [form, setForm] = useState<ExpenseForm>(empty);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -265,7 +275,7 @@ function AddExpenseModal({ open, onClose, onCreated }: { open: boolean; onClose:
     setBusy(true);
     setError(null);
     try {
-      const res = await apiSend<Wrapped<Expense>>('POST', '/expenses', {
+      const res = await apiSend<Wrapped<ExpenseRow>>('POST', '/expenses', {
         category: form.category,
         description: form.description.trim(),
         amount,
@@ -304,7 +314,7 @@ function AddExpenseModal({ open, onClose, onCreated }: { open: boolean; onClose:
           <option value="">Choose…</option>
           {EXPENSE_CATEGORIES.map((c) => (
             <option key={c} value={c}>
-              {titleCase(c)}
+              {categoryLabel(c)}
             </option>
           ))}
         </Select>

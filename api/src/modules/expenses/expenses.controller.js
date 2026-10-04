@@ -9,7 +9,7 @@ export async function createExpense(req, res) {
 }
 
 export async function deleteExpense(req, res) {
-  await service.deleteExpense(req.auth, req.valid.params.id);
+  await service.deleteExpense(req.auth, req.valid.params.id, req.valid.body);
   res.status(204).end();
 }
 

@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { isoDate, limit, optionalText, page, rupees, text, uuid } from '../shared/schemas.js';
+import { EXPENSE_CATEGORIES } from '../accounts/daybook.helpers.js';
+import { EXPENSE_MODES } from '../accounts/accounts.schemas.js';
 
-export const CATEGORIES = ['salary', 'utilities', 'maintenance', 'transport', 'supplies', 'events', 'other'];
-export const PAYMENT_MODES = ['cash', 'upi', 'bank_transfer', 'cheque', 'card'];
+export const CATEGORIES = EXPENSE_CATEGORIES;
+export const PAYMENT_MODES = EXPENSE_MODES;
 
 export const listQuery = z
   .object({
@@ -25,9 +27,12 @@ export const createBody = z
     paymentMode: z.enum(PAYMENT_MODES),
     vendor: optionalText(150),
     reference: optionalText(100),
+    accountId: uuid.optional(),         // default: the branch's Cash account for cash, else its Bank account
     branchId: uuid.optional(),          // super_admin only; default = head office
   })
   .strict();
+
+export const deleteBody = z.object({ reason: optionalText(255) }).strict();
 
 export const monthlyQuery = z
   .object({ months: z.coerce.number().int().min(1).max(24).default(12), branchId: uuid.optional() })

@@ -128,6 +128,9 @@ class-teacher sections + sections where they teach at least one subject.
 | SMS broadcasts, fee reminders, notification logs | Yes | Yes | No | No | No | No |
 | Transport routes, stops, rider assignments | Yes (tenant) | Yes (branch) | No | No | Own child's route (`/parent`) | No |
 | Expenses | Yes (tenant) | Yes (branch) | No | No | No | No |
+| Fee setup: fee heads, class-wise structure, copy, apply to students (`/fees/heads`, `/fees/structure*`) | Yes (tenant; `?branchId=` / head office) | Yes (branch) | No | No | No | No |
+| Per-student fee concession (`/students/:id/fee-concession`) | Yes (tenant) | Yes (branch) | No | No | No | No |
+| Day book, accounts, ledger, transfers, CSV export, month summary (`/accounts*`, `/daybook*`, `/ledger*`) | Yes (tenant; `?branchId=` / head office) | Yes (branch) | No | No | No | No |
 
 ### Parent app `/parent`
 

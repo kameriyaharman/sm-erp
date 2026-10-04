@@ -8,9 +8,12 @@ const FILTER = `
 
 const SELECT = `
   SELECT e.id, e.tenant_id, e.branch_id, e.category, e.description, e.amount::text AS amount, e.expense_date, e.payment_mode,
-         e.vendor, e.reference, e.created_at, concat_ws(' ', u.first_name, u.last_name) AS created_by_name
+         e.vendor, e.reference, e.created_at, concat_ws(' ', u.first_name, u.last_name) AS created_by_name,
+         le.id AS ledger_entry_id, le.voucher_no, a.id AS account_id, a.name AS account_name
     FROM expenses e
-    LEFT JOIN users u ON u.id = e.created_by`;
+    LEFT JOIN users u ON u.id = e.created_by
+    LEFT JOIN ledger_entries le ON le.expense_id = e.id AND le.source = 'expense'
+    LEFT JOIN accounts a ON a.id = le.account_id`;
 
 export async function listExpenses({ scope, from, to, category, page, limit }) {
   const params = [scope.tenantId, scope.branchIds, from ?? null, to ?? null, category ?? null];
@@ -32,15 +35,20 @@ export async function getExpense(db, id) {
 
 export async function insertExpense(db, e) {
   const { rows } = await db.query(
-    `INSERT INTO expenses (tenant_id, branch_id, category, description, amount, expense_date, payment_mode, vendor, reference, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-    [e.tenantId, e.branchId, e.category, e.description, e.amount, e.expenseDate, e.paymentMode, e.vendor ?? null, e.reference ?? null, e.createdBy],
+    `INSERT INTO expenses (tenant_id, branch_id, category, description, amount, expense_date, payment_mode, vendor, reference, created_by, account_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+    [e.tenantId, e.branchId, e.category, e.description, e.amount, e.expenseDate, e.paymentMode, e.vendor ?? null, e.reference ?? null, e.createdBy,
+      e.accountId ?? null],
   );
   return rows[0].id;
 }
 
-export async function softDelete(db, id) {
-  await db.query(`UPDATE expenses SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, [id]);
+/** Soft delete; the expenses trigger soft-deletes the day-book entry with the same reason. */
+export async function softDelete(db, id, { userId, reason }) {
+  await db.query(
+    `UPDATE expenses SET deleted_at = now(), deleted_by = $2, delete_reason = $3 WHERE id = $1 AND deleted_at IS NULL`,
+    [id, userId ?? null, reason],
+  );
 }
 
 /** Start of the earliest current academic year in scope, and today's month (tenant time). */
