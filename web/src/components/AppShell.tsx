@@ -103,6 +103,19 @@ export const NAV: NavGroup[] = [
   },
 ];
 
+/** Breadcrumb tail for pages below a nav item. */
+const SUBPAGE_LABEL: Record<string, string> = {
+  '/settings/school': 'School profile',
+  '/settings/academic': 'Classes and subjects',
+  '/settings/payments': 'Online payments',
+  '/settings/users': 'Portal logins',
+  '/settings/account': 'My account',
+  '/students/new': 'New admission',
+};
+function subpageLabel(pathname: string): string {
+  return SUBPAGE_LABEL[pathname] ?? (pathname.endsWith('/edit') ? 'Edit' : 'Details');
+}
+
 function isActive(pathname: string, href: string, all: string[]) {
   if (pathname === href) return true;
   if (!pathname.startsWith(`${href}/`)) return false;
@@ -293,7 +306,7 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
                     {current.item.label}
                   </Link>
                   <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" aria-hidden />
-                  <span className="truncate font-medium text-slate-900 dark:text-white">Details</span>
+                  <span className="truncate font-medium text-slate-900 dark:text-white">{subpageLabel(pathname)}</span>
                 </>
               ) : (
                 <span className="truncate font-medium text-slate-900 dark:text-white">{current.item.label}</span>
