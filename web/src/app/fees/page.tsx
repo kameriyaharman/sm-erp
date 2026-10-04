@@ -3,14 +3,15 @@
 import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Layers, PlusCircle } from 'lucide-react';
+import { FilePlus2, Layers, PlusCircle } from 'lucide-react';
 import FeeCollectionTable from '@/features/fees/FeeCollectionTable';
 import FeesNav from '@/features/fees/FeesNav';
 import AddChargeModal from '@/features/fees/AddChargeModal';
+import BulkBillModal from '@/features/fees/BulkBillModal';
 import { createFeesApi } from '@/features/fees/api';
 import RequireAuth from '@/components/RequireAuth';
 import { Button, Page, PageHeader, Spinner, buttonClass } from '@/components/ui';
-import { formatInr } from '@/lib/format';
+import { formatDate, formatInr } from '@/lib/format';
 import { API_BASE, getAccessToken } from '@/lib/session';
 import { useFlash } from '@/features/admin/shared';
 
@@ -22,6 +23,7 @@ function Fees() {
   const params = useSearchParams();
   const flash = useFlash(9000);
   const [charging, setCharging] = useState(false);
+  const [billing, setBilling] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   // Filters live in the URL, so other screens link straight to a view:
   // /fees?search=DPS-1015, /fees?status=overdue, /fees?classId=…&sectionId=…
@@ -37,6 +39,9 @@ function Fees() {
               <Layers className="h-4 w-4" aria-hidden />
               Set class fees
             </Link>
+            <Button variant="secondary" icon={<FilePlus2 aria-hidden />} onClick={() => setBilling(true)} data-bulk-open>
+              Generate bills
+            </Button>
             <Button icon={<PlusCircle aria-hidden />} onClick={() => setCharging(true)}>
               Add charge
             </Button>
@@ -45,6 +50,22 @@ function Fees() {
       />
       {flash.node}
       <FeeCollectionTable api={api} refreshKey={refreshKey} />
+      <BulkBillModal
+        open={billing}
+        defaultClassId={params.get('classId') ?? ''}
+        defaultSectionId={params.get('sectionId') ?? ''}
+        onClose={() => setBilling(false)}
+        onDone={(r) => {
+          setBilling(false);
+          setRefreshKey((k) => k + 1);
+          flash.show(
+            (r.invoicesCreated ?? 0) > 0 ? 'success' : 'info',
+            (r.invoicesCreated ?? 0) > 0
+              ? `Generated ${r.invoicesCreated} ${r.invoicesCreated === 1 ? 'bill' : 'bills'} for ${r.target.label} (instalments due up to ${formatDate(r.billUpTo)}): ${formatInr(r.total)} in all. Parents can pay them online now.`
+              : `Nothing new to bill for ${r.target.label}: every instalment due by ${formatDate(r.billUpTo)} is already billed.`,
+          );
+        }}
+      />
       <AddChargeModal
         open={charging}
         defaultClassId={params.get('classId') ?? ''}

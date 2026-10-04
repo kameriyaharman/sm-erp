@@ -35,7 +35,7 @@ export async function childFees(auth, studentId) {
     ).then((r) => r.rows),
     year ? getUnbilledAllocations(pool, { studentId: child.id, academicYearId: year.id }) : [],
     pool.query(
-      `SELECT id, receipt_number, received_at, amount::text AS amount, payment_mode
+      `SELECT id, receipt_number, received_at, amount::text AS amount, payment_mode, status, cancelled_at, cancel_reason
          FROM fee_receipts WHERE student_id = $1 ORDER BY received_at DESC`,
       [child.id],
     ).then((r) => r.rows),
@@ -58,9 +58,11 @@ export async function childFees(auth, studentId) {
       overdue: i.overdue,
       items: i.items,
     })),
-    upcoming: upcoming.map((a) => ({ feeHead: a.fee_head, installmentNo: a.installment_no, dueDate: a.due_date, netAmount: a.net_amount })),
+    // id = the allocation, for "Pay in advance" (POST .../fees/advance-bill).
+    upcoming: upcoming.map((a) => ({ id: a.id, feeHead: a.fee_head, installmentNo: a.installment_no, dueDate: a.due_date, netAmount: a.net_amount })),
     receipts: receipts.map((r) => ({
       id: r.id, receiptNumber: r.receipt_number, receivedAt: r.received_at, amount: r.amount, paymentMode: r.payment_mode,
+      status: r.status, cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason,
     })),
     // The school's own Razorpay account (Settings -> Online payments). mode 'test' = no real money.
     onlinePayment: gateway.enabled

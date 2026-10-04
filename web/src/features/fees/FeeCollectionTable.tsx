@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, CircleCheck, CircleDashed, Clock, IndianRupee, LoaderCircle, Minus, TriangleAlert, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CircleCheck, CircleDashed, Clock, IndianRupee, LoaderCircle, Minus, ReceiptText, TriangleAlert, X } from 'lucide-react';
 import type { FeesApi, ListStudentsParams, Receipt, StudentFeeList, StudentFeeRow, StudentFeeStatus } from './api';
 import { formatInr, toPaise } from './format';
 import CollectFeeModal from './CollectFeeModal';
-import { buttonClass } from '@/components/ui';
+import StudentFeeAccount from './StudentFeeAccount';
+import { Modal, buttonClass } from '@/components/ui';
+import { useFlash } from '@/features/admin/shared';
 import {
   ClassSectionFilter,
   FilterBar,
@@ -106,6 +108,8 @@ export default function FeeCollectionTable({ api, baseParams, refreshKey = 0 }: 
   const [reloadKey, setReloadKey] = useState(0);
 
   const [collectFor, setCollectFor] = useState<StudentFeeRow | null>(null);
+  const [accountFor, setAccountFor] = useState<StudentFeeRow | null>(null);
+  const [accountChanged, setAccountChanged] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const baseKey = JSON.stringify(baseParams ?? {});
@@ -251,7 +255,7 @@ export default function FeeCollectionTable({ api, baseParams, refreshKey = 0 }: 
 
             {!error &&
               rows.map((row) => (
-                <StudentRow key={row.studentId} row={row} onCollect={() => setCollectFor(row)} />
+                <StudentRow key={row.studentId} row={row} onCollect={() => setCollectFor(row)} onAccount={() => setAccountFor(row)} />
               ))}
           </tbody>
         </table>
@@ -281,6 +285,18 @@ export default function FeeCollectionTable({ api, baseParams, refreshKey = 0 }: 
         <CollectFeeModal api={api} student={collectFor} onClose={() => setCollectFor(null)} onCollected={onCollected} />
       )}
 
+      {accountFor && (
+        <AccountModal
+          row={accountFor}
+          onChanged={() => setAccountChanged(true)}
+          onClose={() => {
+            setAccountFor(null);
+            if (accountChanged) setReloadKey((k) => k + 1);
+            setAccountChanged(false);
+          }}
+        />
+      )}
+
       {/* Toast */}
       <div aria-live="polite" className="pointer-events-none fixed bottom-6 right-6 z-[60]">
         {toast && (
@@ -299,7 +315,19 @@ export default function FeeCollectionTable({ api, baseParams, refreshKey = 0 }: 
 
 /* ============================================================================ */
 
-function StudentRow({ row, onCollect }: { row: StudentFeeRow; onCollect: () => void }) {
+/** "Receipts & bills": the student's fee account (receipts with Cancel, upcoming instalments with Generate bill). */
+function AccountModal({ row, onClose, onChanged }: { row: StudentFeeRow; onClose: () => void; onChanged: () => void }) {
+  const flash = useFlash(12000);
+  const classLabel = [row.class?.name, row.section?.name].filter(Boolean).join(' ');
+  return (
+    <Modal open size="xl" title={`${row.studentName}: receipts and bills`} description={[row.admissionNumber, classLabel].filter(Boolean).join(' · ')} onClose={onClose}>
+      {flash.node}
+      <StudentFeeAccount studentId={row.studentId} studentName={row.studentName} canManage onChanged={onChanged} flash={flash.show} />
+    </Modal>
+  );
+}
+
+function StudentRow({ row, onCollect, onAccount }: { row: StudentFeeRow; onCollect: () => void; onAccount: () => void }) {
   const tag = STATUS_TAG[row.status];
   const TagIcon = tag.icon;
   const total = toPaise(row.totalFee);
@@ -338,20 +366,32 @@ function StudentRow({ row, onCollect }: { row: StudentFeeRow; onCollect: () => v
           {tag.label}
         </span>
       </td>
-      <td className="px-5 py-3 text-right">
-        {pending > 0 ? (
+      <td className="px-5 py-3">
+        <span className="flex items-center justify-end gap-1.5">
+          {pending > 0 ? (
+            <button
+              type="button"
+              onClick={onCollect}
+              aria-label={`Collect fee from ${row.studentName}`}
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
+            >
+              <IndianRupee className="h-3.5 w-3.5" aria-hidden />
+              Collect fee
+            </button>
+          ) : (
+            <span className="px-1 text-xs text-slate-400 dark:text-slate-500">Nothing due</span>
+          )}
           <button
             type="button"
-            onClick={onCollect}
-            aria-label={`Collect fee from ${row.studentName}`}
-            className={buttonClass({ variant: 'secondary', size: 'sm' })}
+            onClick={onAccount}
+            aria-label={`Receipts and bills of ${row.studentName}`}
+            title="Receipts and bills"
+            className={buttonClass({ variant: 'ghost', size: 'sm', iconOnly: true })}
+            data-account={row.admissionNumber}
           >
-            <IndianRupee className="h-3.5 w-3.5" aria-hidden />
-            Collect fee
+            <ReceiptText className="h-4 w-4" aria-hidden />
           </button>
-        ) : (
-          <span className="text-xs text-slate-400 dark:text-slate-500">Nothing due</span>
-        )}
+        </span>
       </td>
     </tr>
   );

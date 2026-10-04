@@ -22,6 +22,8 @@ router.get('/students/:studentId/dues', validate({ params: schemas.studentParams
 
 // Invoices
 router.post('/invoices', validate({ body: schemas.createInvoiceBody }), controller.createInvoice);
+// Bill upcoming instalments for a class / section (dryRun = preview). Re-sending bills nothing twice.
+router.post('/invoices/bulk', validate({ body: schemas.bulkInvoiceBody }), controller.bulkInvoices);
 router.get('/invoices/:invoiceId', validate({ params: schemas.invoiceParams }), controller.getInvoice);
 
 // One-off charge ("extra fee") for one student or a whole class / section: one invoice each.
@@ -32,6 +34,13 @@ router.post(
   '/payments',
   validate({ headers: schemas.idempotencyHeaders, body: schemas.collectPaymentBody }),
   controller.collectPayment,
+);
+
+// Cancel a receipt: its invoices become payable again, the day book gets the reversal (migration 016).
+router.post(
+  '/receipts/:receiptId/cancel',
+  validate({ params: schemas.receiptParams, body: schemas.cancelReceiptBody }),
+  controller.cancelReceipt,
 );
 
 // Paid vs pending analytics

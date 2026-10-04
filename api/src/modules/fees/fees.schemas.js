@@ -150,3 +150,34 @@ export const chargeBody = z
   })
   .strict()
   .refine((b) => b.dryRun || b.batchId, { message: 'batchId is required', path: ['batchId'] });
+
+// ---------------------------------------------------------------- receipt cancellation (migration 016)
+
+export const receiptParams = z.object({ receiptId: uuid }).strict();
+
+export const cancelReceiptBody = z
+  .object({
+    reason: z.string().trim().min(5, 'Give a reason of at least 5 characters (e.g. Cheque bounced)').max(255),
+    // Required for receipts paid online: we only cancel the record, the refund is done in the Razorpay Dashboard.
+    acknowledgeOnlineRefund: z.boolean().default(false),
+  })
+  .strict();
+
+// ---------------------------------------------------------------- bulk billing of upcoming instalments
+
+export const bulkInvoiceBody = z
+  .object({
+    classId: uuid,
+    sectionId: uuid.optional(),
+    billUpTo: isoDate,                     // bill every un-invoiced instalment due on or before this date
+    dryRun: z.boolean().default(false),    // preview: students, invoices to create, total
+  })
+  .strict();
+
+// ---------------------------------------------------------------- family portal: pay in advance
+
+export const advanceBillBody = z
+  .object({
+    allocationIds: z.array(uuid).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, 'Duplicate instalments'),
+  })
+  .strict();

@@ -212,6 +212,8 @@ export async function getOrderStatus(auth, orderId) {
     gatewayPaymentId: row.gateway_payment_id,
     receiptId: row.receipt_id,
     receiptNumber: row.receipt_number,
+    // 'cancelled' when the office cancelled the receipt later (the refund happens at Razorpay).
+    receiptStatus: row.receipt_id ? row.receipt_status : null,
     expiresAt: row.expires_at,
     mode: row.gateway_mode,
     failureReason: row.status === 'failed' ? row.failure_reason : null,

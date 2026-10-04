@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { CalendarClock, CircleAlert, CircleCheck, Download, FileText, FlaskConical, Info, LoaderCircle, ReceiptText, Wallet } from 'lucide-react';
+import { Ban, CalendarClock, CircleAlert, CircleCheck, Download, FileText, FlaskConical, Info, LoaderCircle, ReceiptText, Wallet } from 'lucide-react';
 import { useApi } from '@/lib/useApi';
-import { API_BASE, getAccessToken, openPdf } from '@/lib/session';
+import { API_BASE, apiSend, getAccessToken, openPdf } from '@/lib/session';
 import { payFees } from './razorpay-checkout';
 import { ACCENT, EmptyBlock, ErrorBlock, Loading, PCard, SectionTitle, primaryBtn, secondaryBtn } from './ParentLayout';
 import { PAYMENT_MODE, daysUntil, inr, shortDate, tsDate } from './format';
@@ -49,6 +49,23 @@ export default function FeesScreen({ home, self = false }: { home: ChildHome; se
     } catch (e) {
       setFlash({ tone: 'error', text: (e as Error).message });
     } finally {
+      setPaying(null);
+    }
+  }
+
+  /** "Pay in advance": bill these upcoming instalments now, then open Checkout for that bill. */
+  async function payInAdvance(items: UpcomingInstallment[], key: string) {
+    setFlash(null);
+    setPaying(key);
+    try {
+      const r = await apiSend<{ data: { invoices: FeeInvoice[] } }>('POST', `/parent/children/${home.child.id}/fees/advance-bill`, {
+        allocationIds: items.map((i) => i.id),
+      });
+      reload();
+      setPaying(null);
+      await pay(r.data.invoices, key);
+    } catch (e) {
+      setFlash({ tone: 'error', text: (e as Error).message });
       setPaying(null);
     }
   }
@@ -142,7 +159,7 @@ export default function FeesScreen({ home, self = false }: { home: ChildHome; se
         )}
       </section>
 
-      {fees.upcoming.length > 0 && <Upcoming items={fees.upcoming} />}
+      {fees.upcoming.length > 0 && <Upcoming items={fees.upcoming} online={online} paying={paying} onPay={payInAdvance} />}
 
       <section aria-labelledby="receipts">
         <SectionTitle id="receipts" icon={ReceiptText}>
@@ -153,16 +170,31 @@ export default function FeesScreen({ home, self = false }: { home: ChildHome; se
         ) : (
           <PCard as="div">
             <ul>
-              {fees.receipts.map((r, i) => (
-                <li key={r.id} className={`flex items-center gap-3 px-4 py-3 ${i ? 'border-t border-stone-100 dark:border-line' : ''}`}>
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" aria-hidden>
-                    <CircleCheck className="h-[18px] w-[18px]" />
+              {fees.receipts.map((r, i) => {
+                const cancelled = r.status === 'cancelled';
+                return (
+                <li key={r.id} className={`flex items-center gap-3 px-4 py-3 ${i ? 'border-t border-stone-100 dark:border-line' : ''}`} data-receipt={r.receiptNumber} data-status={r.status ?? 'active'}>
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${cancelled ? 'bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'}`}
+                    aria-hidden
+                  >
+                    {cancelled ? <Ban className="h-[18px] w-[18px]" /> : <CircleCheck className="h-[18px] w-[18px]" />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-semibold tabular-nums">{inr(r.amount)}</span>
+                    <span className="flex items-center gap-2">
+                      <span className={`text-[15px] font-semibold tabular-nums ${cancelled ? 'text-stone-400 line-through decoration-red-400/70 dark:text-stone-500' : ''}`}>{inr(r.amount)}</span>
+                      {cancelled && (
+                        <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-800 ring-1 ring-inset ring-red-200 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/30">Cancelled</span>
+                      )}
+                    </span>
                     <span className="block truncate text-xs text-stone-500 dark:text-stone-400">
                       {tsDate(r.receivedAt)}, {PAYMENT_MODE[r.paymentMode] ?? r.paymentMode}, {r.receiptNumber}
                     </span>
+                    {cancelled && (
+                      <span className="block text-xs text-red-800 dark:text-red-300">
+                        Cancelled by the school{r.cancelledAt ? ` on ${tsDate(r.cancelledAt)}` : ''}{r.cancelReason ? `: ${r.cancelReason}` : ''}
+                      </span>
+                    )}
                   </span>
                   <button
                     type="button"
@@ -174,7 +206,8 @@ export default function FeesScreen({ home, self = false }: { home: ChildHome; se
                     Receipt
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </PCard>
         )}
@@ -278,7 +311,7 @@ function InvoiceCard({ invoice: inv, children }: { invoice: FeeInvoice; children
   );
 }
 
-function Upcoming({ items }: { items: UpcomingInstallment[] }) {
+function Upcoming({ items, online, paying, onPay }: { items: UpcomingInstallment[]; online: boolean; paying: string | null; onPay: (items: UpcomingInstallment[], key: string) => void }) {
   // Instalments of several fee heads usually share a due date: show one row per date.
   const byDate = new Map<string, UpcomingInstallment[]>();
   for (const it of items) byDate.set(it.dueDate, [...(byDate.get(it.dueDate) ?? []), it]);
@@ -292,8 +325,9 @@ function Upcoming({ items }: { items: UpcomingInstallment[] }) {
         {groups.map(([date, list]) => {
           const total = list.reduce((s, i) => s + Number(i.netAmount), 0);
           const d = daysUntil(date);
+          const key = `adv-${date}`;
           return (
-            <PCard as="li" key={date} className="flex items-center gap-3 p-4">
+            <PCard as="li" key={date} className="flex flex-wrap items-center gap-3 p-4" data-upcoming={date}>
               <span className="flex w-12 shrink-0 flex-col items-center rounded-lg bg-indigo-50 py-1.5 text-indigo-600 dark:bg-indigo-600/25 dark:text-indigo-200" aria-hidden>
                 <span className="text-lg font-bold leading-none tabular-nums">{date.slice(8, 10).replace(/^0/, '')}</span>
                 <span className="text-[11px] font-semibold">{shortDate(date).split(' ')[1]}</span>
@@ -308,12 +342,19 @@ function Upcoming({ items }: { items: UpcomingInstallment[] }) {
                 <span className="sr-only">Due {shortDate(date)}, </span>
                 {d < 0 ? 'Due' : d === 0 ? 'Today' : d <= 30 ? `In ${d} day${d === 1 ? '' : 's'}` : `Instalment ${list[0].installmentNo}`}
               </span>
+              {online && (
+                <button type="button" className={`${secondaryBtn} w-full`} disabled={paying !== null} onClick={() => onPay(list, key)} data-pay-advance>
+                  {paying === key && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />}
+                  Pay {inr(total)} in advance
+                </button>
+              )}
             </PCard>
           );
         })}
       </ol>
       <p className="mt-2 flex items-center gap-1.5 px-1 text-xs text-stone-500 dark:text-stone-400">
-        <Wallet className="h-3.5 w-3.5" aria-hidden /> Bills are raised a few days before each due date.
+        <Wallet className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {online ? 'Paying in advance raises the bill now; otherwise bills are raised a few days before each due date.' : 'Bills are raised a few days before each due date.'}
       </p>
     </section>
   );

@@ -92,3 +92,31 @@ full waiver, reason, approver).
 any enrolled Grade 7 students), concession rules for concessions already on allocations; Cash in hand ₹45,000 and SBI
 Current A/c ₹32,00,000 as of 1 Apr 2026, an HDFC savings account, manual incomes and cash → bank deposits. Each phase
 is skipped once done.
+
+## 7. Cancelling a receipt, billing early (migration `016_receipt_cancellation.sql`)
+
+`POST /fees/receipts/:id/cancel` (ADMINS; contract section 17). `fee_receipts` gets `status` (active | cancelled),
+`cancelled_at`, `cancelled_by`, `cancel_reason` (checked together), and a guard trigger: a cancelled receipt can't be
+restored, re-dated or re-valued. In ONE transaction, after locking student → receipt → its invoices:
+
+1. the receipt is marked cancelled → `trg_fee_receipts_ledger` (section 1) posts the `fee_cancel` "out" entry for
+   whatever of the receipt is not reversed yet, dated the day of cancellation, same account as the receipt's "in";
+2. one `refund` transaction per payment line (`refund_of_id` = the payment, `status = success`, remarks "Receipt … cancelled: …").
+   This is what `trg_fee_transactions_lock_success` asks for ("record a refund instead"): successful payments are never
+   edited or deleted, and the trigger stays. The 002 rollup recomputes `paid_amount`; the invoice status is derived again
+   (paid → partially_paid / unpaid). The refund posting trigger is capped at what is left of the receipt — 0 after step 1 —
+   so the day book gets exactly **one** reversal per cancelled receipt, never two.
+
+Net effect for the receipt: `in` on its date, `out` on the cancellation date (the day book is cash-basis). Analytics treat
+the cancelled receipt as void (neither its payment nor its reversal in "collected by month / by mode").
+
+Online (Razorpay) receipts: cancelling is only a record change; SM ERP never calls the refund API. The API refuses
+without `acknowledgeOnlineRefund: true`, answers with the payment id + amount to refund in the Razorpay Dashboard, and the
+online-payments console keeps showing "refund at Razorpay" on that order. The order stays `paid`, so a re-delivered
+webhook for the same payment is `already_paid` and cannot post the money again.
+
+Billing early: upcoming instalments (un-invoiced allocations) can be billed for one student (`POST /fees/invoices` with
+`allocationIds`), for a class / section (`POST /fees/invoices/bulk`, dry run first), or by the family itself
+("Pay in advance", only with online payment on). All three copy the allocations unchanged; the unique allocation per
+invoice line makes every path idempotent.
+

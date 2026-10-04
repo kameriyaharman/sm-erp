@@ -64,7 +64,9 @@ export interface OnlinePaymentRow {
   gatewayOrderId: string;
   gatewayPaymentId: string | null;
   isDemo: boolean;
-  receipt: { id: string; number: string; amount: string } | null;
+  receipt: { id: string; number: string; amount: string; status?: 'active' | 'cancelled'; cancelledAt?: string | null; cancelReason?: string | null } | null;
+  /** The office cancelled this payment's receipt: the money stays at Razorpay until refunded there. */
+  refundAtGateway?: { amount: string; paymentId: string | null } | null;
   reason: string | null;
   student: { id: string; name: string; admissionNumber: string; classLabel: string };
   branch: { id: string; name: string };

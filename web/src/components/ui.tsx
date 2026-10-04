@@ -461,9 +461,19 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // Latest onClose without re-running the open effect: callers often pass an inline arrow, and
+  // re-running would move focus back to the first field on every keystroke.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Only the top-most dialog closes (a confirm opened from inside another dialog).
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      if (dialogs.length > 1 && dialogs[dialogs.length - 1] !== ref.current) return;
+      closeRef.current();
+    };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -472,7 +482,7 @@ export function Modal({
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div

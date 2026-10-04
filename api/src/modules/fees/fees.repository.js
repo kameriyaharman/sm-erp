@@ -321,6 +321,8 @@ export async function getReceipt(db, receiptId) {
   const { rows } = await db.query(
     `SELECT r.id, r.tenant_id, r.branch_id, r.student_id, r.receipt_number, r.amount::text, r.payment_mode,
             r.instrument_number, r.instrument_date, r.bank_name, r.remarks, r.received_at,
+            r.status, r.cancelled_at, r.cancel_reason,
+            NULLIF(concat_ws(' ', xu.first_name, xu.last_name), '') AS cancelled_by_name,
             concat_ws(' ', cu.first_name, cu.last_name) AS collected_by_name,
             json_agg(json_build_object(
                 'invoiceId', i.id, 'invoiceNumber', i.invoice_number, 'periodLabel', i.period_label,
@@ -328,11 +330,12 @@ export async function getReceipt(db, receiptId) {
                 'invoiceStatus', i.status)
               ORDER BY i.due_date, i.invoice_number) AS applied_to
        FROM fee_receipts r
-       JOIN fee_transactions t ON t.receipt_id = r.id
+       JOIN fee_transactions t ON t.receipt_id = r.id AND t.txn_type = 'payment'
        JOIN fee_invoices i     ON i.id = t.invoice_id
        LEFT JOIN users cu      ON cu.id = r.collected_by
+       LEFT JOIN users xu      ON xu.id = r.cancelled_by
       WHERE r.id = $1
-      GROUP BY r.id, cu.first_name, cu.last_name`,
+      GROUP BY r.id, cu.first_name, cu.last_name, xu.first_name, xu.last_name`,
     [receiptId],
   );
   return rows[0] ?? null;
@@ -403,7 +406,11 @@ export async function feeAnalytics({ scope, academicYearId }) {
            FROM fee_transactions t
            JOIN inv ON inv.id = t.invoice_id
            JOIN tenants tn ON tn.id = t.tenant_id
+           LEFT JOIN fee_transactions orig ON orig.id = t.refund_of_id
+           LEFT JOIN fee_receipts rr       ON rr.id = COALESCE(orig.receipt_id, t.receipt_id)
           WHERE t.status = 'success'
+            -- a cancelled receipt is void: neither its payment nor its reversal counts in any month
+            AND rr.status IS DISTINCT FROM 'cancelled'
           GROUP BY 1
        )
        SELECT to_char(m.month, 'YYYY-MM') AS month,
@@ -447,6 +454,7 @@ export async function feeAnalytics({ scope, academicYearId }) {
          FROM fee_transactions t
          JOIN inv ON inv.id = t.invoice_id
         WHERE t.status = 'success' AND t.txn_type = 'payment'
+          AND NOT EXISTS (SELECT 1 FROM fee_receipts rr WHERE rr.id = t.receipt_id AND rr.status = 'cancelled')
         GROUP BY t.payment_mode
         ORDER BY sum(t.amount) DESC`,
       params,
@@ -461,4 +469,165 @@ export async function feeAnalytics({ scope, academicYearId }) {
     byFeeHead: byHead.rows,
     byPaymentMode: byMode.rows,
   };
+}
+
+// =====================================================================
+// Receipts: list + cancellation (migration 016)
+// =====================================================================
+
+const RECEIPT_LIST_COLUMNS = `
+  r.id, r.receipt_number, r.amount::text AS amount, r.payment_mode, r.instrument_number, r.received_at, r.remarks,
+  r.status, r.cancelled_at, r.cancel_reason,
+  NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS collected_by_name,
+  NULLIF(concat_ws(' ', xu.first_name, xu.last_name), '') AS cancelled_by_name,
+  (EXISTS (SELECT 1 FROM payment_orders o WHERE o.receipt_id = r.id)
+   OR EXISTS (SELECT 1 FROM fee_transactions g WHERE g.receipt_id = r.id AND g.gateway IS NOT NULL)) AS online,
+  (SELECT g.gateway_payment_id FROM fee_transactions g
+    WHERE g.receipt_id = r.id AND g.gateway_payment_id IS NOT NULL LIMIT 1) AS gateway_payment_id,
+  COALESCE((SELECT json_agg(json_build_object('invoiceId', i.id, 'invoiceNumber', i.invoice_number,
+                                              'periodLabel', i.period_label, 'amount', t.amount::text)
+                            ORDER BY i.due_date, i.invoice_number)
+              FROM fee_transactions t JOIN fee_invoices i ON i.id = t.invoice_id
+             WHERE t.receipt_id = r.id AND t.txn_type = 'payment'), '[]'::json) AS applied_to`;
+
+/** Every receipt of a student (cancelled ones too), newest first. */
+export async function listStudentReceipts(db, studentId) {
+  const { rows } = await db.query(
+    `SELECT ${RECEIPT_LIST_COLUMNS}
+       FROM fee_receipts r
+       LEFT JOIN users cu ON cu.id = r.collected_by
+       LEFT JOIN users xu ON xu.id = r.cancelled_by
+      WHERE r.student_id = $1
+      ORDER BY r.received_at DESC, r.receipt_number DESC`,
+    [studentId],
+  );
+  return rows;
+}
+
+/** Unlocked look-up (to learn the student, whose row is locked first). */
+export async function findReceiptHead(db, receiptId) {
+  const { rows } = await db.query(
+    `SELECT id, tenant_id, branch_id, student_id, receipt_number, status FROM fee_receipts WHERE id = $1`,
+    [receiptId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function lockReceipt(db, receiptId) {
+  const { rows } = await db.query(
+    `SELECT r.id, r.tenant_id, r.branch_id, r.student_id, r.receipt_number, r.amount::text AS amount, r.payment_mode,
+            r.status, r.cancelled_at,
+            (SELECT o.id FROM payment_orders o WHERE o.receipt_id = r.id LIMIT 1) AS order_id,
+            (SELECT g.gateway_payment_id FROM fee_transactions g
+              WHERE g.receipt_id = r.id AND g.gateway_payment_id IS NOT NULL LIMIT 1) AS gateway_payment_id,
+            (SELECT g.gateway FROM fee_transactions g WHERE g.receipt_id = r.id AND g.gateway IS NOT NULL LIMIT 1) AS gateway
+       FROM fee_receipts r
+      WHERE r.id = $1
+      FOR UPDATE OF r`,
+    [receiptId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * The receipt's payment lines with what is still un-refunded of each, their invoices locked
+ * (same lock order as a payment: student, then invoices).
+ */
+export async function lockReceiptPaymentLines(db, receiptId) {
+  const { rows } = await db.query(
+    `SELECT t.id, t.invoice_id, t.amount::text AS amount, t.payment_mode,
+            (t.amount - COALESCE((SELECT sum(x.amount) FROM fee_transactions x
+                                   WHERE x.refund_of_id = t.id AND x.txn_type = 'refund' AND x.status = 'success'), 0))::text AS refundable,
+            i.invoice_number
+       FROM fee_transactions t
+       JOIN fee_invoices i ON i.id = t.invoice_id
+      WHERE t.receipt_id = $1 AND t.txn_type = 'payment' AND t.status = 'success'
+      ORDER BY i.due_date, i.invoice_number, t.id
+      FOR UPDATE OF i`,
+    [receiptId],
+  );
+  return rows;
+}
+
+export async function markReceiptCancelled(db, { receiptId, userId, reason }) {
+  await db.query(
+    `UPDATE fee_receipts SET status = 'cancelled', cancelled_at = now(), cancelled_by = $2, cancel_reason = $3 WHERE id = $1`,
+    [receiptId, userId, reason],
+  );
+}
+
+/** One reversing refund per payment line: the sanctioned way to undo a successful transaction (002). */
+export async function insertReversals(db, { tenantId, branchId, studentId, receiptId, receiptNumber, reason, userId, lines }) {
+  await db.query(
+    `INSERT INTO fee_transactions
+            (tenant_id, branch_id, invoice_id, student_id, txn_type, refund_of_id, amount, payment_mode,
+             status, completed_at, collected_by, idempotency_key, remarks)
+     SELECT $1, $2, x.invoice_id, $3, 'refund', x.payment_id, x.amount, x.payment_mode::payment_mode,
+            'success', now(), $4, 'rcpt-cancel:' || $5::text || ':' || x.payment_id, $6
+       FROM jsonb_to_recordset($7::jsonb) AS x(payment_id uuid, invoice_id uuid, amount numeric, payment_mode text)`,
+    [tenantId, branchId, studentId, userId, receiptId, `Receipt ${receiptNumber} cancelled: ${reason}`.slice(0, 1000), JSON.stringify(lines)],
+  );
+}
+
+export async function getCancelLedgerEntry(db, receiptId) {
+  const { rows } = await db.query(
+    `SELECT le.voucher_no, le.amount::text AS amount, le.entry_date, a.name AS account
+       FROM ledger_entries le JOIN accounts a ON a.id = le.account_id
+      WHERE le.fee_receipt_id = $1 AND le.source = 'fee_cancel'`,
+    [receiptId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function invoicesState(db, invoiceIds) {
+  const { rows } = await db.query(
+    `SELECT ${INVOICE_COLUMNS} FROM fee_invoices i WHERE i.id = ANY ($1) ORDER BY i.due_date, i.invoice_number`,
+    [invoiceIds],
+  );
+  return rows;
+}
+
+// =====================================================================
+// Bulk billing of upcoming instalments
+// =====================================================================
+
+/** Un-invoiced, active allocations of the year due on or before billUpTo, for many students. */
+export async function unbilledForStudents(db, { studentIds, academicYearId, billUpTo }) {
+  const { rows } = await db.query(
+    `SELECT a.id, a.student_id, a.fee_head_id, fh.name AS fee_head, a.installment_no, a.due_date,
+            a.base_amount::text, a.concession_amount::text, a.net_amount::text
+       FROM student_fee_allocations a
+       JOIN fee_heads fh ON fh.id = a.fee_head_id
+      WHERE a.student_id = ANY ($1)
+        AND a.academic_year_id = $2
+        AND a.is_active
+        AND a.due_date <= $3
+        AND NOT EXISTS (SELECT 1 FROM fee_invoice_items it WHERE it.allocation_id = a.id)
+      ORDER BY a.student_id, a.due_date, fh.display_order, fh.name`,
+    [studentIds, academicYearId, billUpTo],
+  );
+  return rows;
+}
+
+/** Students of the list who already have every allocation up to billUpTo on an invoice. */
+export async function studentsWithBilledAllocations(db, { studentIds, academicYearId, billUpTo }) {
+  const { rows } = await db.query(
+    `SELECT DISTINCT a.student_id
+       FROM student_fee_allocations a
+      WHERE a.student_id = ANY ($1) AND a.academic_year_id = $2 AND a.is_active AND a.due_date <= $3
+        AND EXISTS (SELECT 1 FROM fee_invoice_items it WHERE it.allocation_id = a.id)`,
+    [studentIds, academicYearId, billUpTo],
+  );
+  return rows.map((r) => r.student_id);
+}
+
+/** Open invoices of a student holding these allocations (advance-bill replay). */
+export async function openInvoicesForAllocations(db, studentId, allocationIds) {
+  const { rows } = await db.query(
+    `SELECT DISTINCT it.invoice_id, it.allocation_id, i.status
+       FROM fee_invoice_items it JOIN fee_invoices i ON i.id = it.invoice_id
+      WHERE i.student_id = $1 AND it.allocation_id = ANY ($2)`,
+    [studentId, allocationIds],
+  );
+  return rows;
 }

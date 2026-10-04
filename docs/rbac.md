@@ -145,6 +145,9 @@ class-teacher sections + sections where they teach at least one subject.
 | Fee setup: fee heads, class-wise structure, copy, apply to students (`/fees/heads`, `/fees/structure*`) | Yes (tenant; `?branchId=` / head office) | Yes (branch) | No | No | No | No |
 | Per-student fee concession (`/students/:id/fee-concession`) | Yes (tenant) | Yes (branch) | No | No | No | No |
 | One-off charges to a student or a class / section (`POST /fees/charges`) | Yes (tenant) | Yes (branch: own students / classes, others 404) | No | No | No | No |
+| Cancel a receipt (`POST /fees/receipts/:id/cancel`); online receipts need `acknowledgeOnlineRefund` | Yes (tenant) | Yes (branch; other branch's receipt 404) | No | No | No | No |
+| Generate bills for upcoming instalments: one student (`POST /fees/invoices`) or a class / section (`POST /fees/invoices/bulk`) | Yes (tenant) | Yes (branch) | No | No | No | No |
+| "Pay in advance": bill own upcoming instalments, only when the school takes payments online (`POST /parent/children/:id/fees/advance-bill`) | No | No | No | No | Own children (other id 404) | Only themself |
 | All transport riders, filtered (`GET /transport/riders`) | Yes (tenant) | Yes (branch) | No | No | No | No |
 | Day book, accounts, ledger, transfers, CSV export, month summary (`/accounts*`, `/daybook*`, `/ledger*`) | Yes (tenant; `?branchId=` / head office) | Yes (branch) | No | No | No | No |
 

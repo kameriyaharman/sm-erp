@@ -1,16 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Bus, FileBadge, FileDown, IndianRupee, Pencil, PlusCircle, Receipt, ScrollText } from 'lucide-react';
 import { Badge, Button, buttonClass, Card, EmptyState, ErrorState, Notice, Page, PageHeader, Spinner, Stat, Table, Tabs, Td, Th } from '@/components/ui';
 import { useApi } from '@/lib/useApi';
 import { API_BASE, apiSend, getAccessToken, openPdf } from '@/lib/session';
-import { formatDate, formatDateTime, formatInr, formatTime, titleCase } from '@/lib/format';
+import { formatDateTime, formatInr, formatTime, titleCase } from '@/lib/format';
 import CollectFeeModal from '@/features/fees/CollectFeeModal';
 import AddChargeModal from '@/features/fees/AddChargeModal';
-import { createFeesApi, type StudentDues, type StudentFeeRow } from '@/features/fees/api';
+import StudentFeeAccount from '@/features/fees/StudentFeeAccount';
+import { createFeesApi, type StudentFeeRow } from '@/features/fees/api';
 import { toPaise } from '@/features/fees/format';
 import { ConfirmModal, DefinitionList, ReportCardBadge, StudentStatusBadge, errorText, useFlash } from '../shared';
 import { BonafideModal, TcModal } from '../certificates/IssueModals';
@@ -192,7 +193,19 @@ export default function StudentProfile() {
 
       {tab === 'overview' && <StudentOverview s={s} canEdit />}
 
-      {tab === 'fees' && <FeesTab studentId={s.id} reloadKey={duesKey} canCollect={active} onCollect={() => setModal('collect')} onCharge={() => setModal('charge')} admissionNumber={s.admissionNumber} />}
+      {tab === 'fees' && (
+        <FeesTab
+          studentId={s.id}
+          studentName={s.name}
+          reloadKey={duesKey}
+          canCollect={active}
+          onCollect={() => setModal('collect')}
+          onCharge={() => setModal('charge')}
+          admissionNumber={s.admissionNumber}
+          onChanged={reload}
+          flash={flash.show}
+        />
+      )}
 
       {tab === 'attendance' && (
         <Card title="Attendance this year">
@@ -442,101 +455,32 @@ function PdfButton({ path, filename, onError }: { path: string; filename: string
   );
 }
 
-function FeesTab({ studentId, reloadKey, canCollect, onCollect, onCharge, admissionNumber }: { studentId: string; reloadKey: number; canCollect: boolean; onCollect: () => void; onCharge: () => void; admissionNumber: string }) {
-  const { data, error, loading, reload } = useApi<Wrapped<StudentDues>>(`/fees/students/${studentId}/dues`);
-  useEffect(() => {
-    if (reloadKey > 0) reload();
-  }, [reloadKey, reload]);
-  const d = data?.data;
+function FeesTab({ studentId, studentName, reloadKey, canCollect, onCollect, onCharge, admissionNumber, onChanged, flash }: { studentId: string; studentName: string; reloadKey: number; canCollect: boolean; onCollect: () => void; onCharge: () => void; admissionNumber: string; onChanged: () => void; flash: ReturnType<typeof useFlash>['show'] }) {
   return (
-    <div className="space-y-6">
-      <Card
-        title="Open invoices"
-        padded={false}
-        actions={
-          <>
-            <Link href={`/fees?search=${encodeURIComponent(admissionNumber)}`} className="text-sm font-medium text-indigo-700 hover:underline dark:text-indigo-300">
-              Fee ledger
-            </Link>
-            {canCollect && (
-              <Button size="sm" variant="secondary" icon={<PlusCircle className="h-3.5 w-3.5" aria-hidden />} onClick={onCharge}>
-                Add charge
-              </Button>
-            )}
-            {canCollect && (
-              <Button size="sm" icon={<Receipt className="h-3.5 w-3.5" aria-hidden />} onClick={onCollect}>
-                Collect fee
-              </Button>
-            )}
-          </>
-        }
-      >
-        {loading && !d ? (
-          <Spinner />
-        ) : error ? (
-          <ErrorState message={error} onRetry={reload} />
-        ) : !d?.openInvoices.length ? (
-          <EmptyState title="No open invoices" description={d && toPaise(d.notYetInvoiced.amount) > 0 ? 'Upcoming instalments are listed below.' : 'Nothing is due right now.'} />
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Invoice</Th>
-                <Th>Period</Th>
-                <Th>Due date</Th>
-                <Th align="right">Amount</Th>
-                <Th align="right">Paid</Th>
-                <Th align="right">Balance</Th>
-                <Th>Status</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.openInvoices.map((inv) => {
-                const overdue = inv.dueDate < new Date().toISOString().slice(0, 10);
-                return (
-                  <tr key={inv.id}>
-                    <Td className="whitespace-nowrap font-medium tabular-nums">{inv.invoiceNumber}</Td>
-                    <Td className="whitespace-nowrap">{inv.periodLabel ?? inv.feeHeads ?? '-'}</Td>
-                    <Td className="whitespace-nowrap">{formatDate(inv.dueDate)}</Td>
-                    <Td align="right">{formatInr(inv.netAmount)}</Td>
-                    <Td align="right">{formatInr(inv.paidAmount)}</Td>
-                    <Td align="right" className="font-semibold">
-                      {formatInr(inv.balanceAmount)}
-                    </Td>
-                    <Td>
-                      <Badge tone={overdue ? 'red' : inv.status === 'partially_paid' ? 'amber' : 'gray'}>{overdue ? 'Overdue' : titleCase(inv.status)}</Badge>
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        )}
-      </Card>
-      {d && d.notYetInvoiced.allocations.length > 0 && (
-        <Card title={`Upcoming instalments, ${formatInr(d.notYetInvoiced.amount)}`} padded={false}>
-          <Table>
-            <thead>
-              <tr>
-                <Th>Fee head</Th>
-                <Th align="right">Instalment</Th>
-                <Th>Due date</Th>
-                <Th align="right">Amount</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.notYetInvoiced.allocations.map((a) => (
-                <tr key={a.id}>
-                  <Td>{a.feeHead}</Td>
-                  <Td align="right">{a.installmentNo}</Td>
-                  <Td className="whitespace-nowrap">{formatDate(a.dueDate)}</Td>
-                  <Td align="right">{formatInr(a.netAmount)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </Card>
-      )}
-    </div>
+    <StudentFeeAccount
+      studentId={studentId}
+      studentName={studentName}
+      canManage={canCollect}
+      reloadKey={reloadKey}
+      onChanged={onChanged}
+      flash={flash}
+      invoiceActions={
+        <>
+          <Link href={`/fees?search=${encodeURIComponent(admissionNumber)}`} className="text-sm font-medium text-indigo-700 hover:underline dark:text-indigo-300">
+            Fee ledger
+          </Link>
+          {canCollect && (
+            <Button size="sm" variant="secondary" icon={<PlusCircle className="h-3.5 w-3.5" aria-hidden />} onClick={onCharge}>
+              Add charge
+            </Button>
+          )}
+          {canCollect && (
+            <Button size="sm" icon={<Receipt className="h-3.5 w-3.5" aria-hidden />} onClick={onCollect}>
+              Collect fee
+            </Button>
+          )}
+        </>
+      }
+    />
   );
 }

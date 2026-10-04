@@ -202,7 +202,13 @@ export default function OnlinePaymentsConsole() {
                         >
                           {r.receipt.number}
                         </Button>
-                      ) : (
+                      ) : null}
+                      {r.receipt?.status === 'cancelled' && (
+                        <span className="mt-0.5 block text-xs font-medium text-red-700 dark:text-red-300" data-receipt-cancelled>
+                          Receipt cancelled · refund at Razorpay
+                        </span>
+                      )}
+                      {r.receipt ? null : (
                         <span className="text-slate-400">-</span>
                       )}
                     </Td>
@@ -298,6 +304,14 @@ function PaymentDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
                 {d.isDemo && <Badge>Sample record (demo school)</Badge>}
               </div>
               {result && <Notice tone={result.tone}>{result.text}</Notice>}
+              {d.refundAtGateway && (
+                <Notice tone="error">
+                  The office cancelled receipt {d.receipt?.number}
+                  {d.receipt?.cancelledAt ? ` on ${formatDateTime(d.receipt.cancelledAt)}` : ''}
+                  {d.receipt?.cancelReason ? ` (“${d.receipt.cancelReason}”)` : ''}. Its bills are payable again. The {formatInr(d.refundAtGateway.amount)} is still in the school&apos;s Razorpay
+                  account: refund payment {d.refundAtGateway.paymentId ?? 'this payment'} in the Razorpay Dashboard if not done yet.
+                </Notice>
+              )}
               {d.status === 'needs_review' && d.reviewReason && <Notice tone="warn">{d.reviewReason}</Notice>}
               {d.status === 'failed' && d.failureReason && <Notice tone="error">{d.failureReason}</Notice>}
               {d.status === 'created' && <Notice tone="info">The payer has Razorpay Checkout open (or closed it without paying). It expires {formatDateTime(d.expiresAt)}.</Notice>}

@@ -25,7 +25,18 @@ function mapRow(r) {
     gatewayOrderId: r.gateway_order_id,
     gatewayPaymentId: r.gateway_payment_id,
     isDemo: isDemoGatewayOrder(r.gateway_order_id),
-    receipt: r.receipt_id ? { id: r.receipt_id, number: r.receipt_number, amount: r.receipt_amount } : null,
+    receipt: r.receipt_id
+      ? {
+        id: r.receipt_id,
+        number: r.receipt_number,
+        amount: r.receipt_amount,
+        status: r.receipt_status,
+        cancelledAt: r.receipt_cancelled_at,
+        cancelReason: r.receipt_cancel_reason,
+      }
+      : null,
+    // A paid order whose receipt the office cancelled: the money is still at Razorpay until refunded there.
+    refundAtGateway: r.receipt_id && r.receipt_status === 'cancelled' ? { amount: r.receipt_amount, paymentId: r.gateway_payment_id } : null,
     reason: r.shown_status === 'needs_review' ? r.review_reason : r.shown_status === 'failed' ? r.failure_reason : null,
     student: {
       id: r.student_id,
@@ -41,7 +52,8 @@ function mapRow(r) {
 const BASE_SELECT = `
   SELECT o.id, ${SHOWN_STATUS} AS shown_status, o.amount::text AS amount, o.currency, o.gateway_mode, o.created_at, o.paid_at,
          o.expires_at, o.gateway_order_id, o.gateway_payment_id, o.receipt_id, o.review_reason, o.failure_reason, o.branch_id,
-         r.receipt_number, r.amount::text AS receipt_amount,
+         r.receipt_number, r.amount::text AS receipt_amount, r.status AS receipt_status,
+         r.cancelled_at AS receipt_cancelled_at, r.cancel_reason AS receipt_cancel_reason,
          sp.id AS student_id, concat_ws(' ', su.first_name, su.last_name) AS student_name, sp.admission_number,
          c.name AS class_name, sec.name AS section_name, b.name AS branch_name,
          NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS creator_name, cu.role AS creator_role
@@ -80,8 +92,8 @@ export async function listOnlinePayments(auth, q) {
   // Totals over every order matching the filters (not just this page).
   const { rows: [totals] } = await pool.query(
     `SELECT count(*)::int AS total,
-            count(r.id)::int AS receipts,
-            COALESCE(sum(r.amount), 0)::text AS collected,
+            count(r.id) FILTER (WHERE r.status = 'active')::int AS receipts,
+            COALESCE(sum(r.amount) FILTER (WHERE r.status = 'active'), 0)::numeric(14,2)::text AS collected,
             COALESCE(sum(o.amount), 0)::text AS amount
        FROM payment_orders o
        JOIN tenants t           ON t.id = o.tenant_id
@@ -112,7 +124,7 @@ export async function onlinePaymentsSummary(auth, q) {
               (now() AT TIME ZONE t.timezone)::date AS today, t.timezone
          FROM payment_orders o
          JOIN tenants t ON t.id = o.tenant_id
-         LEFT JOIN fee_receipts r ON r.id = o.receipt_id
+         LEFT JOIN fee_receipts r ON r.id = o.receipt_id AND r.status = 'active'   -- cancelled receipts are not collected money
         WHERE ($1::uuid IS NULL OR o.tenant_id = $1) AND ($2::uuid[] IS NULL OR o.branch_id = ANY ($2))
      )
      SELECT COALESCE(sum(receipt_amount) FILTER (WHERE (received_at AT TIME ZONE timezone)::date = today), 0)::text AS today_amount,

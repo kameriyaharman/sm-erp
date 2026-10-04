@@ -81,7 +81,7 @@ export async function insertOrder(db, order) {
 
 export async function getOrder(db, orderId) {
   const { rows } = await db.query(
-    `SELECT o.*, o.amount::text AS amount, r.receipt_number,
+    `SELECT o.*, o.amount::text AS amount, r.receipt_number, r.status AS receipt_status, r.cancelled_at AS receipt_cancelled_at,
             COALESCE(json_agg(json_build_object(
                 'invoiceId', it.invoice_id, 'invoiceNumber', i.invoice_number, 'periodLabel', i.period_label,
                 'amount', it.amount::text, 'invoiceStatus', i.status, 'invoiceBalance', i.balance_amount::text)
@@ -91,7 +91,7 @@ export async function getOrder(db, orderId) {
        LEFT JOIN fee_invoices i         ON i.id = it.invoice_id
        LEFT JOIN fee_receipts r         ON r.id = o.receipt_id
       WHERE o.id = $1
-      GROUP BY o.id, r.receipt_number`,
+      GROUP BY o.id, r.receipt_number, r.status, r.cancelled_at`,
     [orderId],
   );
   return rows[0] ?? null;
@@ -222,6 +222,8 @@ export async function getReceiptDocument(receiptId) {
   const { rows } = await pool.query(
     `SELECT r.id, r.tenant_id, r.branch_id, r.student_id, r.receipt_number, r.amount::text AS amount, r.payment_mode,
             r.instrument_number, r.received_at, r.remarks,
+            r.status, r.cancelled_at, r.cancel_reason,
+            NULLIF(concat_ws(' ', xu.first_name, xu.last_name), '') AS cancelled_by_name,
             t.name AS school_name, t.timezone, b.name AS branch_name, b.address_line1, b.address_line2, b.city, b.state,
             b.postal_code, b.phone AS branch_phone, b.email AS branch_email, b.affiliation_no,
             concat_ws(' ', su.first_name, su.last_name) AS student_name, sp.admission_number, sp.roll_number,
@@ -254,6 +256,7 @@ export async function getReceiptDocument(receiptId) {
        LEFT JOIN academic_years ay ON ay.id = r.academic_year_id
        LEFT JOIN users pu       ON pu.id = sp.parent_id
        LEFT JOIN users cu       ON cu.id = r.collected_by
+       LEFT JOIN users xu       ON xu.id = r.cancelled_by
       WHERE r.id = $1`,
     [receiptId],
   );

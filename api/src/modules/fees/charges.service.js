@@ -48,7 +48,7 @@ const TARGET_SELECT = `
 
 const ACTIVE = `sp.status IN ('enrolled', 'suspended')`;
 
-async function loadTargets(db, auth, scope, { lock }) {
+export async function loadTargets(db, auth, scope, { lock }) {
   const forUpdate = lock ? 'FOR UPDATE OF sp' : '';
   if (scope.studentId) {
     const { rows } = await db.query(`${TARGET_SELECT} WHERE sp.id = $1 AND sp.deleted_at IS NULL ${forUpdate}`, [scope.studentId]);

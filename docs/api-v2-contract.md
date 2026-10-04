@@ -807,3 +807,69 @@ POST /fees/charges
   **Edit fees**; `?classId=` opens the class editor (Add fee → head or new head, frequency, amount, generated instalments
   with editable due dates; Save → impact preview → confirm → offer to apply to students without these fees).
 - "Add charge" on Fee collection and on the student profile's Fees tab uses `POST /fees/charges`.
+
+## 17. Cancelling receipts and billing instalments early (migration `016`)
+
+Owner: "fee already paid aa rahi hai ... use unpaid kar sakun ya koi aur option ho". Two features: an admin can cancel a
+receipt (its bills become payable again, e.g. to retry / test online payment), and upcoming instalments can be billed
+early so parents can pay them online in advance. Design and money rules: `docs/accounts.md` section 7.
+
+### 17.1 `POST /fees/receipts/:receiptId/cancel` (ADMINS, branch scope)
+```
+{ reason: string (5-255), acknowledgeOnlineRefund?: false }
+→ 200 { data: { receipt: { …receipt, status: "cancelled", cancelledAt, cancelReason, cancelledBy },
+                reversed: "18000.00",
+                invoices: [ { id, invoiceNumber, periodLabel, netAmount, paidAmount, balanceAmount, status } ],   // after the reversal
+                ledgerEntry: { voucherNo, amount, entryDate, account } | null,                                     // the day-book "out"
+                onlineRefund: null | { gateway: "razorpay", gatewayPaymentId, amount, message } } }
+```
+- One transaction, rows locked (student → receipt → invoices): receipt marked cancelled, one `refund` transaction per
+  payment line (`refund_of_id` = the payment), invoice paid/balance/status recomputed by the 002 triggers, one day-book
+  reversal by the 012 trigger. Fee caches (`/fees/students`, analytics, defaulters) are busted.
+- Errors: 400 reason < 5 chars / unknown field; 404 `RECEIPT_NOT_FOUND` (or another branch's); 409 `ALREADY_CANCELLED`;
+  409 `ONLINE_REFUND_ACK_REQUIRED` for a Razorpay receipt without `acknowledgeOnlineRefund: true` (`details: { gatewayPaymentId, amount }`).
+  Teacher / parent / student → 403.
+- Online receipts are cancelled **as a record only**: no refund API is called; the money is refunded in the Razorpay
+  Dashboard. The order stays `paid` (a re-delivered webhook for that payment is `already_paid` and never posts again).
+- Receipt numbers are never reused; a cancelled receipt cannot be restored or edited (DB trigger).
+
+### 17.2 Receipt status everywhere
+- `GET /fees/students/:id/dues` → new `receipts: [ { id, receiptNumber, amount, paymentMode, instrumentNumber, receivedAt, remarks,
+  collectedBy, online, gatewayPaymentId, status: active|cancelled, cancelledAt, cancelReason, cancelledBy,
+  appliedTo: [ { invoiceId, invoiceNumber, periodLabel, amount } ] } ]` (all receipts, newest first).
+- `POST /fees/payments` receipt: + `status, cancelledAt, cancelReason, cancelledBy`.
+- `GET /parent/children/:id/fees` → `receipts[]` + `status, cancelledAt, cancelReason`; `upcoming[]` + `id` (allocation id).
+- `GET /finance/orders/:id` → + `receiptStatus`. `GET /finance/online-payments[/:id]` → `receipt.{ status, cancelledAt,
+  cancelReason }` + `refundAtGateway: { amount, paymentId } | null`; list totals and summary tiles count active receipts only.
+- `GET /finance/receipts/:id/pdf` of a cancelled receipt: red CANCELLED stamp + diagonal watermark + a notice with date, who and reason.
+- `GET /fees/analytics`: a cancelled receipt is void — `byPaymentMode` and `byMonth` leave out its payment and its reversal;
+  summary totals come from invoice balances as before.
+
+### 17.3 Billing upcoming instalments
+- One student: existing `POST /fees/invoices { studentId, allocationIds | billUpTo, periodLabel? }`.
+- Class / section: `POST /fees/invoices/bulk { classId, sectionId?, billUpTo: YYYY-MM-DD, dryRun?: false }` (ADMINS)
+  → `{ data: { target: { classId, sectionId, label }, billUpTo, academicYear, students, alreadyBilled, nothingDue, total,
+  dryRun, invoicesToCreate | invoicesCreated, preview?: [ { studentId, name, admissionNumber, classLabel, periodLabel, dueDate,
+  amount, lines: [ { allocationId, feeHead, installmentNo, dueDate, amount } ] } ] (≤200), invoices? } }`.
+  One invoice per current student (`enrolled`/`suspended`) with every active, not-yet-invoiced allocation of the current
+  year due on or before `billUpTo`; label "Instalment 3" / "Instalments 3–4"; due date = earliest instalment.
+  201 when bills were created, 200 for dryRun or nothing left. **Idempotent**: allocations are unique per invoice line
+  and students are locked, so a repeat bills nothing (`invoicesCreated: 0`, `alreadyBilled` = everyone). Errors as 16.3.
+- Family portal: `POST /parent/children/:studentId/fees/advance-bill { allocationIds: uuid[] (1-50) }` (parent: own
+  child; student: self; others 404). Only when the school's online payment is on (else 503 `PAYMENTS_DISABLED`).
+  Bills exactly those of the child's own un-invoiced current-year allocations (amounts and concessions copied, nothing
+  else accepted) as one invoice "Instalment 4 (advance)", then the app calls `POST /finance/create-order` for it.
+  201 `{ data: { invoices: [ … ], replayed: false } }`; the same request again → 200 `replayed: true` with the open bill;
+  instalments already paid / of another child → 422 `ALLOCATIONS_UNAVAILABLE`. An abandoned Checkout leaves an ordinary
+  unpaid bill with the instalment's own due date (not overdue early).
+
+### 17.4 Web
+- Student profile → Fees and Fee collection → "Receipts and bills" (icon on each row) share `features/fees/StudentFeeAccount.tsx`:
+  open invoices, upcoming instalments with checkboxes + **Generate bill**, every receipt (Paid / Cancelled badge, Online
+  badge, PDF, **Cancel receipt** → reason + quick reasons; online receipts show a red warning and need a tick).
+- Fee collection → **Generate bills** (`BulkBillModal.tsx`): class / section (pre-filled from the filters), due-up-to date,
+  live preview, apply.
+- Parent / student Fees: cancelled receipts struck through with the school's reason; upcoming instalments get
+  **Pay ₹X in advance** when online payment is on.
+- Online payments console: "Receipt cancelled · refund at Razorpay" on the row, a notice in the drawer.
+

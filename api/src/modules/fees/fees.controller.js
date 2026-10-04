@@ -1,5 +1,7 @@
 import * as feesService from './fees.service.js';
 import * as charges from './charges.service.js';
+import * as receipts from './receipts.service.js';
+import * as billing from './billing.service.js';
 import { NS, invalidate } from '../../cache/cache.js';
 
 export async function listStudents(req, res) {
@@ -37,6 +39,18 @@ export async function getAnalytics(req, res) {
 
 export async function createCharges(req, res) {
   const { tenantId, ...data } = await charges.createCharges(req.auth, req.valid.body);
+  if (!data.dryRun && data.invoicesCreated > 0) await invalidate(NS.FEES, tenantId ?? req.auth.tenantId);
+  res.status(data.dryRun || data.invoicesCreated === 0 ? 200 : 201).json({ data });
+}
+
+export async function cancelReceipt(req, res) {
+  const { tenantId, ...data } = await receipts.cancelReceipt(req.auth, req.valid.params.receiptId, req.valid.body);
+  await invalidate(NS.FEES, tenantId ?? req.auth.tenantId);
+  res.json({ data });
+}
+
+export async function bulkInvoices(req, res) {
+  const { tenantId, ...data } = await billing.bulkBill(req.auth, req.valid.body);
   if (!data.dryRun && data.invoicesCreated > 0) await invalidate(NS.FEES, tenantId ?? req.auth.tenantId);
   res.status(data.dryRun || data.invoicesCreated === 0 ? 200 : 201).json({ data });
 }

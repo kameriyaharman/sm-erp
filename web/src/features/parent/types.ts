@@ -122,6 +122,8 @@ export interface FeeInvoice {
 }
 
 export interface UpcomingInstallment {
+  /** The allocation id, for "Pay in advance" (POST /parent/children/:id/fees/advance-bill). */
+  id: string;
   feeHead: string;
   installmentNo: number;
   dueDate: string;
@@ -134,6 +136,10 @@ export interface FeeReceipt {
   receivedAt: string;         // ISO
   amount: Money;
   paymentMode: string;
+  /** 'cancelled' when the school cancelled it (the bill it paid is due again). */
+  status?: 'active' | 'cancelled';
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
 }
 
 export interface ChildFees {

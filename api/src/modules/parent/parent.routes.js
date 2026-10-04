@@ -7,6 +7,9 @@ import { validate } from '../../middleware/validate.js';
 import { isoMonth, limit, page, studentParams } from '../shared/schemas.js';
 import { getParentHome } from './parent.service.js';
 import * as children from './parent.children.service.js';
+import { advanceBill } from '../fees/billing.service.js';
+import { advanceBillBody } from '../fees/fees.schemas.js';
+import { NS, invalidate } from '../../cache/cache.js';
 
 const router = Router();
 // Family portal: parents (their children) and students (themselves only; the same screens with one child).
@@ -23,6 +26,17 @@ router.get('/home', async (req, res) => {
 router.get('/children/:studentId/fees', validate({ params: studentParams }), async (req, res) => {
   noStore(res).json({ data: await children.childFees(req.auth, req.valid.params.studentId) });
 });
+
+// "Pay in advance": bill the chosen upcoming instalments of this child, then pay them via /finance/create-order.
+router.post(
+  '/children/:studentId/fees/advance-bill',
+  validate({ params: studentParams, body: advanceBillBody }),
+  async (req, res) => {
+    const { tenantId, replayed, ...data } = await advanceBill(req.auth, req.valid.params.studentId, req.valid.body);
+    if (!replayed) await invalidate(NS.FEES, tenantId);
+    noStore(res).status(replayed ? 200 : 201).json({ data: { ...data, replayed } });
+  },
+);
 
 router.get(
   '/children/:studentId/attendance',

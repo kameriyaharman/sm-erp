@@ -76,9 +76,71 @@ export interface StudentDues {
   openInvoices: OpenInvoice[];
   notYetInvoiced: {
     amount: Money;
-    allocations: { id: string; feeHead: string; installmentNo: number; dueDate: string; netAmount: Money }[];
+    allocations: UnbilledAllocation[];
   };
+  /** Every receipt, newest first; cancelled receipts stay listed. */
+  receipts?: ReceiptListItem[];
   totals: { invoicedDue: Money; totalDue: Money };
+}
+
+export interface UnbilledAllocation {
+  id: string;
+  feeHead: string;
+  installmentNo: number;
+  dueDate: string;
+  netAmount: Money;
+}
+
+export type ReceiptStatus = 'active' | 'cancelled';
+
+export interface ReceiptListItem {
+  id: string;
+  receiptNumber: string;
+  amount: Money;
+  paymentMode: PaymentMode | 'net_banking' | 'wallet' | 'other';
+  instrumentNumber: string | null;
+  receivedAt: string;
+  remarks: string | null;
+  collectedBy: string | null;
+  /** Paid through Razorpay: cancelling only cancels the record; the refund is done at Razorpay. */
+  online: boolean;
+  gatewayPaymentId: string | null;
+  status: ReceiptStatus;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  cancelledBy: string | null;
+  appliedTo: { invoiceId: string; invoiceNumber: string; periodLabel: string | null; amount: Money }[];
+}
+
+export interface CancelReceiptResult {
+  receipt: Receipt;
+  reversed: Money;
+  invoices: { id: string; invoiceNumber: string; periodLabel: string | null; netAmount: Money; paidAmount: Money; balanceAmount: Money; status: InvoiceStatus }[];
+  ledgerEntry: { voucherNo: string; amount: Money; entryDate: string; account: string } | null;
+  onlineRefund: { gateway: 'razorpay'; gatewayPaymentId: string | null; amount: Money; message: string } | null;
+}
+
+export interface BulkBillResult {
+  target: { classId: string; sectionId: string | null; label: string };
+  billUpTo: string;
+  academicYear: { id: string; name: string } | null;
+  students: number;
+  alreadyBilled: number;
+  nothingDue: number;
+  total: Money;
+  dryRun: boolean;
+  invoicesToCreate?: number;
+  invoicesCreated?: number;
+  preview?: {
+    studentId: string;
+    name: string;
+    admissionNumber: string;
+    classLabel: string | null;
+    periodLabel: string | null;
+    dueDate: string;
+    amount: Money;
+    lines: { allocationId: string; feeHead: string; installmentNo: number; dueDate: string; amount: Money }[];
+  }[];
 }
 
 export interface CreateInvoiceInput {
@@ -116,6 +178,9 @@ export interface Receipt {
   instrumentNumber: string | null;
   receivedAt: string;
   collectedBy: string | null;
+  status?: ReceiptStatus;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
   appliedTo: {
     invoiceId: string;
     invoiceNumber: string;

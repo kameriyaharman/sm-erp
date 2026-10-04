@@ -16,6 +16,8 @@ const C = {
   band: '#f1f5f9',
   accent: '#4f46e5',
   ok: '#047857',
+  bad: '#b91c1c',
+  badBand: '#fef2f2',
 };
 
 const MODE_LABEL = {
@@ -35,7 +37,7 @@ export function renderReceiptPdf(r, out) {
   const doc = new PDFDocument({
     size: 'A4',
     margin: 40,
-    info: { Title: `Fee receipt ${r.receipt_number}`, Author: r.school_name, Subject: 'Fee receipt' },
+    info: { Title: `Fee receipt ${r.receipt_number}${r.status === 'cancelled' ? ' (CANCELLED)' : ''}`, Author: r.school_name, Subject: 'Fee receipt' },
   });
   doc.pipe(out);
 
@@ -60,13 +62,32 @@ export function renderReceiptPdf(r, out) {
   // Title block on the right
   doc.font('Helvetica-Bold').fontSize(13).fillColor(C.accent).text('FEE RECEIPT', right - 170, top + 20, { width: 152, align: 'right' });
   const paidOnline = Boolean(r.gateway_payment_id);
-  const stamp = paidOnline ? 'PAID ONLINE' : 'PAID';
-  doc.roundedRect(right - 98, top + 40, 80, 20, 4).lineWidth(1.2).strokeColor(C.ok).stroke();
-  doc.font('Helvetica-Bold').fontSize(9).fillColor(C.ok).text(stamp, right - 98, top + 46, { width: 80, align: 'center' });
+  const cancelled = r.status === 'cancelled';
+  const stamp = cancelled ? 'CANCELLED' : paidOnline ? 'PAID ONLINE' : 'PAID';
+  const stampColor = cancelled ? C.bad : C.ok;
+  doc.roundedRect(right - 98, top + 40, 80, 20, 4).lineWidth(1.2).strokeColor(stampColor).stroke();
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(stampColor).text(stamp, right - 98, top + 46, { width: 80, align: 'center' });
 
   let y = Math.max(headerBottom, top + 70) + 12;
-  doc.moveTo(left, y).lineTo(right, y).lineWidth(1.5).strokeColor(C.accent).stroke();
+  doc.moveTo(left, y).lineTo(right, y).lineWidth(1.5).strokeColor(cancelled ? C.bad : C.accent).stroke();
   y += 14;
+
+  // ---------------------------------------------------------------- cancellation notice
+  if (cancelled) {
+    const by = r.cancelled_by_name ? ` by ${r.cancelled_by_name}` : '';
+    const note = [
+      `This receipt was cancelled on ${formatDateTime(r.cancelled_at, r.timezone)}${by}. The amount is not counted as paid.`,
+      `Reason: ${r.cancel_reason ?? '-'}`,
+      paidOnline ? 'Paid online: any refund of this payment is made by the school through Razorpay, separately.' : null,
+    ].filter(Boolean).join('\n');
+    doc.font('Helvetica').fontSize(9.5);
+    const h = doc.heightOfString(note, { width: width - 56 }) + 30;
+    doc.rect(left + 10, y, width - 20, h).fill(C.badBand);
+    doc.rect(left + 10, y, 3, h).fill(C.bad);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(C.bad).text('RECEIPT CANCELLED', left + 24, y + 8, { width: width - 56 });
+    doc.font('Helvetica').fontSize(9.5).fillColor(C.ink).text(note, left + 24, y + 22, { width: width - 56 });
+    y += h + 12;
+  }
 
   // ---------------------------------------------------------------- meta grid (2 columns)
   const colW = (width - 36) / 2;
@@ -126,7 +147,7 @@ export function renderReceiptPdf(r, out) {
 
   // Total
   y += 4;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(C.ink).text('Total received', cols[2].x, y, { width: cols[2].w });
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(C.ink).text(cancelled ? 'Total (cancelled)' : 'Total received', cols[2].x, y, { width: cols[2].w });
   doc.fontSize(13).text(inr(r.amount), cols[3].x - 40, y - 1, { width: cols[3].w + 40, align: 'right' });
   y += 22;
   doc.font('Helvetica-Oblique').fontSize(9.5).fillColor(C.muted)
@@ -159,6 +180,17 @@ export function renderReceiptPdf(r, out) {
   // Small generated-at stamp under the block.
   doc.font('Helvetica').fontSize(7.5).fillColor('#94a3b8')
     .text(`Generated ${formatDateTime(new Date(), r.timezone)}`, left, y + 8, { width, align: 'right' });
+
+  // Diagonal watermark across the receipt, drawn last so it sits over everything.
+  if (cancelled) {
+    const cx = left + width / 2;
+    const cy = top + (y - top) / 2;
+    doc.save();
+    doc.rotate(-30, { origin: [cx, cy] });
+    doc.fillOpacity(0.13).fillColor(C.bad).font('Helvetica-Bold').fontSize(84)
+      .text('CANCELLED', cx - 300, cy - 42, { width: 600, align: 'center', lineBreak: false });
+    doc.restore();
+  }
 
   doc.end();
   return doc;

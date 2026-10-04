@@ -4,10 +4,11 @@ import { assertBranchAccess, resolveBranchScope } from '../../middleware/scope.j
 import { fromPaise, toPaise } from '../../utils/money.js';
 import { logger } from '../../utils/logger.js';
 import * as repo from './fees.repository.js';
+import { allocationLines } from './billing.helpers.js';
 
 const unprocessable = (code, message, details) => new AppError(422, code, message, details);
 
-function formatNumber(branchCode, docType, periodKey, sequence) {
+export function formatNumber(branchCode, docType, periodKey, sequence) {
   const prefix = docType === 'invoice' ? 'INV' : 'RCT';
   return `${String(branchCode).toUpperCase()}/${prefix}/${periodKey}/${String(sequence).padStart(5, '0')}`;
 }
@@ -41,7 +42,7 @@ function mapInvoice(row) {
   };
 }
 
-function mapReceipt(row) {
+export function mapReceipt(row) {
   return {
     id: row.id,
     tenantId: row.tenant_id,
@@ -55,6 +56,31 @@ function mapReceipt(row) {
     remarks: row.remarks,
     receivedAt: row.received_at,
     collectedBy: row.collected_by_name || null,
+    status: row.status ?? 'active',
+    cancelledAt: row.cancelled_at ?? null,
+    cancelReason: row.cancel_reason ?? null,
+    cancelledBy: row.cancelled_by_name ?? null,
+    appliedTo: row.applied_to,
+  };
+}
+
+/** A receipt in a list (student dues / profile fees tab). Cancelled receipts stay listed. */
+export function mapReceiptListRow(row) {
+  return {
+    id: row.id,
+    receiptNumber: row.receipt_number,
+    amount: row.amount,
+    paymentMode: row.payment_mode,
+    instrumentNumber: row.instrument_number,
+    receivedAt: row.received_at,
+    remarks: row.remarks,
+    collectedBy: row.collected_by_name ?? null,
+    online: Boolean(row.online),
+    gatewayPaymentId: row.gateway_payment_id ?? null,
+    status: row.status,
+    cancelledAt: row.cancelled_at,
+    cancelReason: row.cancel_reason,
+    cancelledBy: row.cancelled_by_name ?? null,
     appliedTo: row.applied_to,
   };
 }
@@ -115,9 +141,10 @@ export async function getStudentDues(auth, studentId) {
   assertBranchAccess(auth, { tenantId: student.tenant_id, branchId: student.branch_id }, 'Student not found');
 
   const year = await repo.resolveAcademicYear(pool, { branchId: student.branch_id });
-  const [invoices, unbilled] = await Promise.all([
+  const [invoices, unbilled, receipts] = await Promise.all([
     repo.listOpenInvoices(pool, studentId),
     year ? repo.getUnbilledAllocations(pool, { studentId, academicYearId: year.id }) : [],
+    repo.listStudentReceipts(pool, studentId),
   ]);
 
   const openBalance = invoices.reduce((sum, inv) => sum + toPaise(inv.balance_amount), 0);
@@ -144,6 +171,8 @@ export async function getStudentDues(auth, studentId) {
         netAmount: a.net_amount,
       })),
     },
+    // Every receipt, newest first; cancelled ones stay (status 'cancelled', with reason and date).
+    receipts: receipts.map(mapReceiptListRow),
     totals: {
       invoicedDue: fromPaise(openBalance),
       totalDue: fromPaise(openBalance + unbilledTotal),
@@ -247,13 +276,7 @@ export async function createInvoice(auth, input) {
     }
 
     const lines = [
-      ...allocations.map((a) => ({
-        allocation_id: a.id,
-        fee_head_id: a.fee_head_id,
-        description: `${a.fee_head} (installment ${a.installment_no})`,
-        amount: a.base_amount,
-        concession_amount: a.concession_amount,
-      })),
+      ...allocationLines(allocations),
       ...input.items.map((item) => ({
         allocation_id: null,
         fee_head_id: item.feeHeadId,
