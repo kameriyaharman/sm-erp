@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { ClassSectionFilter, FilterBar, FilterSearch, FilteredEmpty, ResultCount, SelectFilter, chip, classSectionChips, useClassOptions, useUrlFilters } from '@/components/filters';
 import Link from 'next/link';
 import { ArrowDown, ArrowUp, Bus, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Spinner, Table, Td, Th } from '@/components/ui';
-import { useApi } from '@/lib/useApi';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Pagination, Spinner, Table, Tabs, Td, Th } from '@/components/ui';
+import { qs, useApi } from '@/lib/useApi';
 import { apiSend } from '@/lib/session';
 import { formatTime } from '@/lib/format';
 import { ConfirmModal, PhoneLink, ProgressBar, StudentPicker, errorText, fieldErrors, useFlash } from '../shared';
@@ -14,6 +16,10 @@ import type { RouteRider, StudentRow, TransportRoute, Wrapped } from '../types';
 export default function TransportPage() {
   const { data, error, loading, reload } = useApi<Wrapped<TransportRoute[]>>('/transport/routes');
   const flash = useFlash();
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const view = params.get('view') === 'riders' ? 'riders' : 'routes';
   const [editing, setEditing] = useState<TransportRoute | 'new' | null>(null);
   const [riders, setRiders] = useState<TransportRoute | null>(null);
   const routes = data?.data ?? [];
@@ -31,7 +37,17 @@ export default function TransportPage() {
         }
       />
       {flash.node}
-      {loading && !data ? (
+      <Tabs<'routes' | 'riders'>
+        value={view}
+        onChange={(v) => router.replace(v === 'riders' ? `${pathname}?view=riders` : pathname, { scroll: false })}
+        items={[
+          { value: 'routes', label: 'Routes' },
+          { value: 'riders', label: `All riders${data ? ` (${totalRiders})` : ''}` },
+        ]}
+      />
+      {view === 'riders' ? (
+        <RidersList routes={routes} />
+      ) : loading && !data ? (
         <Spinner label="Loading routes…" />
       ) : error ? (
         <ErrorState message={error} onRetry={reload} />
@@ -420,5 +436,115 @@ function RidersModal({ route, onClose, onChanged }: { route: TransportRoute; onC
         </p>
       </ConfirmModal>
     </>
+  );
+}
+
+// ------------------------------------------------------------------ every rider, filtered
+
+interface Rider {
+  studentId: string;
+  name: string;
+  admissionNumber: string;
+  classLabel: string | null;
+  route: { id: string; name: string; vehicleNumber: string };
+  stop: { id: string; name: string; pickupTime: string | null; dropTime: string | null };
+  parent: { name: string; phone: string | null } | null;
+}
+
+/** /transport?view=riders&routeId=…&stopId=…&classId=…&sectionId=…&search=… */
+function RidersList({ routes }: { routes: TransportRoute[] }) {
+  const f = useUrlFilters({ search: '', routeId: '', stopId: '', classId: '', sectionId: '' });
+  const { search, routeId, stopId, classId, sectionId } = f.values;
+  const cls = useClassOptions();
+  const res = useApi<{ data: Rider[]; meta: { page: number; total: number; totalPages: number } }>(
+    `/transport/riders${qs({ search, routeId, stopId: routeId ? stopId : '', classId, sectionId, page: f.page, limit: 50 })}`,
+  );
+  const route = routes.find((r) => r.id === routeId);
+  const rows = res.data?.data ?? [];
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('routeId', 'Route', routeId, route?.name, () => f.set({ routeId: '', stopId: '' })),
+    chip('stopId', 'Stop', stopId, route?.stops.find((x) => x.id === stopId)?.name, () => f.set({ stopId: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+  ];
+  return (
+    <Card padded={false}>
+      <FilterBar
+        search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Student, admission no., parent phone" />}
+        chips={chips}
+        onClear={f.clear}
+        extra={res.data ? <ResultCount total={res.data.meta.total} noun={['rider', 'riders']} filtered={f.active > 0} /> : undefined}
+      >
+        <SelectFilter label="Route" name="routeId" value={routeId} allLabel="All routes" options={routes.map((r) => ({ value: r.id, label: r.name }))} onChange={(v) => f.set({ routeId: v, stopId: '' })} />
+        <SelectFilter
+          label="Stop"
+          name="stopId"
+          value={stopId}
+          allLabel="All stops"
+          disabled={!route}
+          options={(route?.stops ?? []).map((x) => ({ value: x.id, label: x.name }))}
+          onChange={(v) => f.set({ stopId: v })}
+        />
+        <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+      </FilterBar>
+      {res.error ? (
+        <ErrorState message={res.error} onRetry={res.reload} />
+      ) : !res.data ? (
+        <Spinner label="Loading riders…" />
+      ) : rows.length === 0 ? (
+        f.active > 0 ? (
+          <FilteredEmpty what="riders" chips={chips} onClear={f.clear} icon={<Bus className="h-7 w-7" aria-hidden />} />
+        ) : (
+          <EmptyState icon={<Bus className="h-7 w-7" aria-hidden />} title="Nobody uses school transport yet" description="Open a route and add students with their stop." />
+        )
+      ) : (
+        <>
+          <Table className={res.loading ? 'opacity-60' : undefined}>
+            <thead>
+              <tr>
+                <Th>Student</Th>
+                <Th>Class</Th>
+                <Th>Route</Th>
+                <Th>Stop</Th>
+                <Th className="hidden md:table-cell">Pickup / drop</Th>
+                <Th className="hidden lg:table-cell">Parent</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.studentId} data-rider={r.studentId}>
+                  <Td>
+                    <Link href={`/students/${r.studentId}`} className="whitespace-nowrap font-medium hover:underline">
+                      {r.name}
+                    </Link>
+                    <span className="block text-xs tabular-nums text-slate-500 dark:text-slate-400">{r.admissionNumber}</span>
+                  </Td>
+                  <Td className="whitespace-nowrap" data-col="class">{r.classLabel ?? '—'}</Td>
+                  <Td className="whitespace-nowrap" data-col="route">
+                    {r.route.name}
+                    <span className="block font-mono text-xs text-slate-500 dark:text-slate-400">{r.route.vehicleNumber}</span>
+                  </Td>
+                  <Td className="whitespace-nowrap">{r.stop.name}</Td>
+                  <Td className="hidden whitespace-nowrap tabular-nums md:table-cell">
+                    {r.stop.pickupTime ? formatTime(r.stop.pickupTime) : '–'} / {r.stop.dropTime ? formatTime(r.stop.dropTime) : '–'}
+                  </Td>
+                  <Td className="hidden lg:table-cell">
+                    {r.parent ? (
+                      <>
+                        <span className="block">{r.parent.name}</span>
+                        {r.parent.phone && <PhoneLink phone={r.parent.phone} />}
+                      </>
+                    ) : (
+                      '—'
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <Pagination page={f.page} totalPages={res.data.meta.totalPages} onChange={f.setPage} />
+        </>
+      )}
+    </Card>
   );
 }

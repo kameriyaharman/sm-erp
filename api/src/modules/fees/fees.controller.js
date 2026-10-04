@@ -1,4 +1,5 @@
 import * as feesService from './fees.service.js';
+import * as charges from './charges.service.js';
 import { NS, invalidate } from '../../cache/cache.js';
 
 export async function listStudents(req, res) {
@@ -32,4 +33,10 @@ export async function collectPayment(req, res) {
 
 export async function getAnalytics(req, res) {
   res.json({ data: await feesService.getAnalytics(req.auth, req.valid.query) });
+}
+
+export async function createCharges(req, res) {
+  const { tenantId, ...data } = await charges.createCharges(req.auth, req.valid.body);
+  if (!data.dryRun && data.invoicesCreated > 0) await invalidate(NS.FEES, tenantId ?? req.auth.tenantId);
+  res.status(data.dryRun || data.invoicesCreated === 0 ? 200 : 201).json({ data });
 }

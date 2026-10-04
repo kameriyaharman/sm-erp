@@ -55,8 +55,8 @@ async function loadPaper(db, auth, id, opts) {
 // Exams
 // =====================================================================
 
-export async function listExams(auth, { branchId }) {
-  return (await repo.listExams(await staffScope(auth, { branchId }))).map(mapExam);
+export async function listExams(auth, { branchId, ...filters }) {
+  return (await repo.listExams(await staffScope(auth, { branchId }), filters)).map(mapExam);
 }
 
 export async function createExam(auth, input) {
@@ -90,9 +90,9 @@ export async function updateExam(auth, id, patch) {
 // Papers
 // =====================================================================
 
-export async function listPapers(auth, examId, { classId }) {
+export async function listPapers(auth, examId, { classId, subjectId }) {
   await loadExam(pool, auth, examId);
-  return (await repo.listPapers(pool, examId, classId)).map((p) => mapPaper(p));
+  return (await repo.listPapers(pool, examId, classId, subjectId)).map((p) => mapPaper(p));
 }
 
 export async function createPapers(auth, examId, input) {

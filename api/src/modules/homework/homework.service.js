@@ -43,8 +43,8 @@ export function mapHomework(h, { attachments = [], auth = null } = {}) {
  * A page of homework rows with their attachments; used by staff and the parent app (one
  * section). `auth` decides `canEdit` (null = read-only, e.g. parents).
  */
-export async function pageOfHomework({ scope, sectionId, sectionIds = null, page, limit, auth = null }) {
-  const rows = await repo.listHomework({ scope, sectionId, sectionIds, page, limit });
+export async function pageOfHomework({ scope, sectionId, sectionIds = null, page, limit, auth = null, filters = {} }) {
+  const rows = await repo.listHomework({ scope, sectionId, sectionIds, page, limit, filters });
   const total = rows.length ? Number(rows[0].total_count) : 0;
   const files = await repo.attachmentsFor(pool, rows.map((r) => r.id));
   return {
@@ -54,14 +54,15 @@ export async function pageOfHomework({ scope, sectionId, sectionIds = null, page
 }
 
 /** Admins: their scope. Teacher: only their sections (class teacher or subject teacher). */
-export async function listHomework(auth, { sectionId, page, limit }) {
+export async function listHomework(auth, { sectionId, page, limit, ...filters }) {
   const scope = await staffScope(auth);
   if (sectionId) await loadSectionInScope(pool, auth, sectionId);
   let sectionIds = null;
+  // Teacher: their sections only, whatever classId / subjectId asks for (another class -> empty list).
   if (auth.role === ROLES.TEACHER && !sectionId) {
     sectionIds = [...(await loadTeacherScope(pool, auth)).sectionIds];
   }
-  return pageOfHomework({ scope, sectionId, sectionIds, page, limit, auth });
+  return pageOfHomework({ scope, sectionId, sectionIds, page, limit, auth, filters });
 }
 
 /** Teacher: subject required, and only a subject they teach in that section. */

@@ -8,7 +8,8 @@ import { qs, useApi } from '@/lib/useApi';
 import { apiSend } from '@/lib/session';
 import { formatDate, formatInr, formatMonth, titleCase } from '@/lib/format';
 import Link from 'next/link';
-import { ConfirmModal, FilterBar, errorText, fieldErrors, monthRange, todayLocal, useFlash } from './shared';
+import { ConfirmModal, errorText, fieldErrors, monthRange, todayLocal, useFlash } from './shared';
+import { DateRangeFilter, FilterBar, FilterSearch, FilteredEmpty, SelectFilter, chip, describeRange, useUrlFilters } from '@/components/filters';
 import type { Expense, ExpensesMeta, Paged, Wrapped } from './types';
 // Categories come from the day book: every expense is an "out" entry there (see docs/accounts.md).
 import { EXPENSE_CATEGORIES, EXPENSE_MODES, categoryColor, categoryLabel, type ExpenseCategory } from '@/features/accounts/types';
@@ -16,16 +17,14 @@ import { EXPENSE_CATEGORIES, EXPENSE_MODES, categoryColor, categoryLabel, type E
 /** An expense row as the API now sends it: + its day-book voucher and account. */
 type ExpenseRow = Omit<Expense, 'category'> & { category: string; voucherNo?: string | null; account?: { id: string; name: string } | null };
 
+/** /expenses?from=…&to=…&category=…&paymentMode=…&search=… (default: this month). */
 export default function ExpensesPage() {
   const params = useSearchParams();
   const flash = useFlash();
-  const thisMonth = todayLocal().slice(0, 7);
-  const [mode, setMode] = useState<'month' | 'range' | 'all'>('month');
-  const [month, setMonth] = useState(thisMonth);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [category, setCategory] = useState<'' | ExpenseCategory>('');
-  const [page, setPage] = useState(1);
+  const today = todayLocal();
+  const month = monthRange(today.slice(0, 7));
+  const f = useUrlFilters({ search: '', category: '', paymentMode: '', from: month.from, to: month.to });
+  const { search, category, paymentMode, from, to } = f.values;
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<ExpenseRow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,14 +33,22 @@ export default function ExpensesPage() {
   useEffect(() => {
     if (params.get('new') === '1') setAdding(true);
   }, [params]);
-  useEffect(() => setPage(1), [mode, month, from, to, category]);
 
-  const range = mode === 'month' && month ? monthRange(month) : mode === 'range' ? { from, to } : { from: '', to: '' };
-  const badRange = mode === 'range' && from && to && from > to;
-  const { data, error, loading, reload } = useApi<Paged<ExpenseRow, Omit<ExpensesMeta, 'byCategory'> & { byCategory: Array<{ category: string; amount: string }> }>>(badRange ? null : `/expenses${qs({ from: range.from, to: range.to, category, page, limit: 25 })}`);
+  const badRange = Boolean(from && to && from > to);
+  const { data, error, loading, reload } = useApi<Paged<ExpenseRow, Omit<ExpensesMeta, 'byCategory'> & { byCategory: Array<{ category: string; amount: string }> }>>(
+    badRange ? null : `/expenses${qs({ from, to, category, paymentMode, search, page: f.page, limit: 25 })}`,
+  );
 
-  const periodLabel = mode === 'month' && month ? formatMonth(month) : mode === 'range' && (from || to) ? `${from ? formatDate(from) : 'start'} to ${to ? formatDate(to) : 'today'}` : 'All time';
+  const periodLabel = from || to ? describeRange(from, to, today) : 'All time';
   const total = data ? Number(data.meta.totalAmount) : 0;
+  const modeText = (m: string) => (m === 'upi' ? 'UPI' : titleCase(m));
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('category', 'Category', category, category ? categoryLabel(category) : '', () => f.set({ category: '' })),
+    chip('paymentMode', 'Paid by', paymentMode, paymentMode ? modeText(paymentMode) : '', () => f.set({ paymentMode: '' })),
+    (from !== month.from || to !== month.to) && { key: 'date', label: `Period: ${periodLabel}`, onRemove: () => f.set({ from: month.from, to: month.to }) },
+  ];
+  const filtered = chips.some(Boolean);
 
   async function doDelete() {
     if (!deleting) return;
@@ -90,6 +97,8 @@ export default function ExpensesPage() {
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 {data.meta.total} expense{data.meta.total === 1 ? '' : 's'}
                 {category ? ` in ${categoryLabel(category)}` : ''}
+                {paymentMode ? ` paid by ${modeText(paymentMode)}` : ''}
+                {search ? ` matching “${search}”` : ''}
               </p>
               {data.meta.byCategory.length > 0 ? (
                 <ul className="mt-5 space-y-3" aria-label="Spending by category">
@@ -97,7 +106,7 @@ export default function ExpensesPage() {
                     const pct = total > 0 ? (Number(c.amount) / total) * 100 : 0;
                     return (
                       <li key={c.category}>
-                        <button type="button" onClick={() => setCategory(category === c.category ? '' : (c.category as ExpenseCategory))} className="w-full text-left" aria-pressed={category === c.category}>
+                        <button type="button" onClick={() => f.set({ category: category === c.category ? '' : c.category })} className="w-full text-left" aria-pressed={category === c.category}>
                           <span className="mb-1 flex items-center justify-between gap-3 text-sm">
                             <span className="flex items-center gap-2">
                               <span className={`h-2.5 w-2.5 rounded-sm ${categoryColor(c.category)}`} aria-hidden />
@@ -123,27 +132,21 @@ export default function ExpensesPage() {
         </Card>
 
         <Card className="min-w-0 xl:col-span-8" padded={false}>
-          <FilterBar>
-            <Select label="Period" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
-              <option value="month">Month</option>
-              <option value="range">Date range</option>
-              <option value="all">All time</option>
-            </Select>
-            {mode === 'month' && <Input label="Month" type="month" value={month} max={thisMonth} onChange={(e) => setMonth(e.target.value)} />}
-            {mode === 'range' && (
-              <>
-                <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-                <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} error={badRange ? 'Before “From”' : undefined} />
-              </>
-            )}
-            <Select label="Category" value={category} onChange={(e) => setCategory(e.target.value as typeof category)}>
-              <option value="">All categories</option>
-              {EXPENSE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {categoryLabel(c)}
-                </option>
-              ))}
-            </Select>
+          <FilterBar
+            search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Description, vendor, bill or voucher no." />}
+            chips={chips}
+            onClear={f.clear}
+          >
+            <DateRangeFilter label="Period" from={from} to={to} today={today} max={today} onChange={(r) => f.set(r)} />
+            <SelectFilter
+              label="Category"
+              name="category"
+              value={category}
+              allLabel="All categories"
+              options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: categoryLabel(c) }))}
+              onChange={(v) => f.set({ category: v })}
+            />
+            <SelectFilter label="Paid by" name="paymentMode" value={paymentMode} allLabel="Any mode" options={EXPENSE_MODES.map((m) => ({ value: m, label: modeText(m) }))} onChange={(v) => f.set({ paymentMode: v })} />
           </FilterBar>
           {badRange ? (
             <EmptyState title="Check the dates" description="“From” must be on or before “To”." />
@@ -152,7 +155,11 @@ export default function ExpensesPage() {
           ) : error ? (
             <ErrorState message={error} onRetry={reload} />
           ) : !data?.data.length ? (
-            <EmptyState title="No expenses in this period" description="Record salaries, bills and purchases to see where money goes." action={<Button onClick={() => setAdding(true)}>Add expense</Button>} />
+            filtered ? (
+              <FilteredEmpty what="expenses" chips={chips} onClear={f.clear} />
+            ) : (
+              <EmptyState title="No expenses in this period" description="Record salaries, bills and purchases to see where money goes." action={<Button onClick={() => setAdding(true)}>Add expense</Button>} />
+            )
           ) : (
             <div className={loading ? 'opacity-60' : undefined}>
               <Table>
@@ -209,7 +216,7 @@ export default function ExpensesPage() {
                   ))}
                 </tbody>
               </Table>
-              <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={setPage} />
+              <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={f.setPage} />
             </div>
           )}
         </Card>
@@ -221,8 +228,11 @@ export default function ExpensesPage() {
         onCreated={(x) => {
           setAdding(false);
           flash.show('success', `Recorded ${formatInr(x.amount)} for “${x.description}”.`);
-          if (mode === 'month' && x.expenseDate.slice(0, 7) !== month) setMonth(x.expenseDate.slice(0, 7));
-          else reload();
+          // Show the new expense: widen the period when it falls outside it.
+          if ((from && x.expenseDate < from) || (to && x.expenseDate > to)) {
+            const m = monthRange(x.expenseDate.slice(0, 7));
+            f.set({ from: m.from, to: m.to });
+          } else reload();
         }}
       />
       <ConfirmModal open={!!deleting} title="Delete this expense?" confirmLabel="Delete" busy={busy} error={deleteError} onConfirm={doDelete} onClose={() => setDeleting(null)}>

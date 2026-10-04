@@ -6,7 +6,7 @@ import { AppError } from '../../errors/AppError.js';
 import { logger } from '../../utils/logger.js';
 import { getNotifier } from '../notifications/index.js';
 import { findNoticeRecipients } from '../notifications/recipients.repository.js';
-import { assertStaffAccess, isAdmin, resolveWriteBranch, staffScope } from '../shared/access.js';
+import { assertStaffAccess, isAdmin, pageMeta, resolveWriteBranch, staffScope } from '../shared/access.js';
 import * as repo from './notices.repository.js';
 
 function mapNotice(n) {
@@ -22,13 +22,14 @@ function mapNotice(n) {
   };
 }
 
-export async function listNotices(auth, { limit }) {
+/** Returns { data, meta }; meta.total counts every notice matching the filters. */
+export async function listNotices(auth, filters) {
   let rows;
-  if (isAdmin(auth)) rows = await repo.listForAdmin(await staffScope(auth), limit);
-  else if (auth.role === ROLES.TEACHER) rows = await repo.listForTeacher(auth, limit);
-  else if (auth.role === ROLES.PARENT || auth.role === ROLES.STUDENT) rows = await repo.listForParent(auth, limit);   // student: own class
+  if (isAdmin(auth)) rows = await repo.listForAdmin(await staffScope(auth), filters);
+  else if (auth.role === ROLES.TEACHER) rows = await repo.listForTeacher(auth, filters);
+  else if (auth.role === ROLES.PARENT || auth.role === ROLES.STUDENT) rows = await repo.listForParent(auth, filters);   // student: own class
   else rows = [];
-  return rows.map(mapNotice);
+  return { data: rows.map(mapNotice), meta: pageMeta(filters, rows.length ? Number(rows[0].total_count) : 0) };
 }
 
 /**

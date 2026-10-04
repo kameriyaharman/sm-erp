@@ -18,13 +18,19 @@ const EXAM_SELECT = `
     FROM exams e
     LEFT JOIN academic_terms t ON t.id = e.term_id`;
 
-export async function listExams(scope) {
+export async function listExams(scope, { termId, status, examType, classId, search } = {}) {
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   const { rows } = await query(
     `${EXAM_SELECT}
       JOIN academic_years ay ON ay.id = e.academic_year_id AND ay.is_current
      WHERE ($1::uuid IS NULL OR e.tenant_id = $1) AND ($2::uuid[] IS NULL OR e.branch_id = ANY ($2))
+       AND ($3::uuid IS NULL OR e.term_id = $3)
+       AND ($4::text IS NULL OR e.status::text = $4)
+       AND ($5::text IS NULL OR e.exam_type::text = $5)
+       AND ($6::uuid IS NULL OR EXISTS (SELECT 1 FROM exam_schedules es WHERE es.exam_id = e.id AND es.class_id = $6))
+       AND ($7::text IS NULL OR e.name ILIKE $7)
      ORDER BY e.start_date NULLS LAST, e.name`,
-    [scope.tenantId, scope.branchIds],
+    [scope.tenantId, scope.branchIds, termId ?? null, status ?? null, examType ?? null, classId ?? null, like],
   );
   return rows;
 }
@@ -82,12 +88,12 @@ const PAPER_SELECT = `
     JOIN subjects sub    ON sub.id = es.subject_id
     LEFT JOIN sections s ON s.id = es.section_id`;
 
-export async function listPapers(db, examId, classId) {
+export async function listPapers(db, examId, classId, subjectId = null) {
   const { rows } = await db.query(
     `${PAPER_SELECT}
-      WHERE es.exam_id = $1 AND ($2::uuid IS NULL OR es.class_id = $2)
+      WHERE es.exam_id = $1 AND ($2::uuid IS NULL OR es.class_id = $2) AND ($3::uuid IS NULL OR es.subject_id = $3)
       ORDER BY c.display_order, c.name, s.name NULLS FIRST, sub.display_order, sub.name`,
-    [examId, classId ?? null],
+    [examId, classId ?? null, subjectId ?? null],
   );
   return rows;
 }

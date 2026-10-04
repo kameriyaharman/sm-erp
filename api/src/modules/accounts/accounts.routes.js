@@ -30,5 +30,6 @@ export const ledgerRouter = Router();
 ledgerRouter.use(guard);
 ledgerRouter.get('/', validate({ query: schemas.ledgerQuery }), controller.listLedger);
 ledgerRouter.get('/export.csv', validate({ query: schemas.exportQuery }), controller.exportCsv);
+ledgerRouter.get('/entries.csv', validate({ query: schemas.ledgerExportQuery }), controller.exportLedgerCsv);
 ledgerRouter.post('/', validate({ body: schemas.createEntryBody }), controller.createEntry);
 ledgerRouter.delete('/:id', validate({ params: idParams, body: schemas.deleteEntryBody }), controller.deleteEntry);

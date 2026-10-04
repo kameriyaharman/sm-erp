@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { BookOpenCheck, Search, UserPlus } from 'lucide-react';
 import { Badge, Button, Card, controlClass, cx, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Tabs, Td, Th } from '@/components/ui';
-import { useApi } from '@/lib/useApi';
+import { qs, useApi } from '@/lib/useApi';
+import { ClassSectionFilter, FilterBar, FilterSearch, FilteredEmpty, ResultCount, SelectFilter, chip, classSectionChips, useClassOptions, useUrlFilters } from '@/components/filters';
 import { apiSend, currentUser } from '@/lib/session';
 import { formatDate } from '@/lib/format';
-import { Avatar, ConfirmModal, FilterBar, PhoneLink, errorCode, errorText, fieldErrors, useFlash } from './shared';
-import type { StaffMember, StaffRole, Wrapped } from './types';
+import { Avatar, ConfirmModal, PhoneLink, errorCode, errorText, fieldErrors, useFlash } from './shared';
+import type { StaffMember, StaffRole, Subject, Wrapped } from './types';
 import { AssignSubjectsModal, SubjectChips, WhoTeaches } from './staff/AssignSubjects';
 
 const ROLE_BADGE: Record<StaffRole, { label: string; tone: 'indigo' | 'amber' | 'gray' }> = {
@@ -16,12 +17,22 @@ const ROLE_BADGE: Record<StaffRole, { label: string; tone: 'indigo' | 'amber' | 
   super_admin: { label: 'Owner', tone: 'amber' },
 };
 
+/** /staff?search=…&role=teacher&status=active&subjectId=…&classId=…&sectionId=… (default: active staff). */
+const FILTERS = { search: '', role: '', status: 'active', subjectId: '', classId: '', sectionId: '' };
+const ROLE_OPTIONS = [
+  { value: 'teacher', label: 'Teachers' },
+  { value: 'branch_admin', label: 'Admins' },
+  { value: 'super_admin', label: 'Owners' },
+];
+type StaffList = { data: StaffMember[]; meta?: { total: number; counts: { active: number; teachers: number; total: number } } };
+
 export default function StaffPage() {
-  const { data, error, loading, reload, setData } = useApi<Wrapped<StaffMember[]>>('/staff');
+  const f = useUrlFilters(FILTERS, { keep: [] });
+  const { search, role, status, subjectId, classId, sectionId } = f.values;
+  const cls = useClassOptions();
+  const subjects = useApi<Wrapped<Subject[]>>('/school/subjects');
+  const { data, error, loading, reload, setData } = useApi<StaffList>(`/staff${qs({ search, role, status, subjectId, classId, sectionId })}`);
   const flash = useFlash();
-  const [search, setSearch] = useState('');
-  const [role, setRole] = useState<'' | StaffRole>('');
-  const [status, setStatus] = useState<'' | 'active' | 'inactive'>('active');
   const [adding, setAdding] = useState(false);
   const [toggle, setToggle] = useState<StaffMember | null>(null);
   const [busy, setBusy] = useState(false);
@@ -32,19 +43,17 @@ export default function StaffPage() {
   /** Nobody deactivates themselves or the owner (docs/rbac.md: admins edit staff in their scope). */
   const canToggle = (s: StaffMember) => s.userId !== me?.id && s.role !== 'super_admin';
 
-  const rows = useMemo(() => {
-    const t = search.trim().toLowerCase();
-    return (data?.data ?? []).filter(
-      (s) =>
-        (!role || s.role === role) &&
-        (!status || s.status === status) &&
-        (!t || [s.name, s.email, s.phone, s.designation, s.employeeCode, s.department].some((v) => v?.toLowerCase().includes(t))),
-    );
-  }, [data, search, role, status]);
-  const counts = useMemo(() => {
-    const all = data?.data ?? [];
-    return { active: all.filter((s) => s.status === 'active').length, teachers: all.filter((s) => s.role === 'teacher' && s.status === 'active').length };
-  }, [data]);
+  // The server filters; a row whose status was just changed stays until the next reload.
+  const rows = data?.data ?? [];
+  const counts = data?.meta?.counts ?? { active: 0, teachers: 0 };
+  const subjectName = (id: string) => subjects.data?.data.find((x) => x.id === id)?.name;
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('role', 'Role', role, ROLE_OPTIONS.find((o) => o.value === role)?.label, () => f.set({ role: '' })),
+    chip('status', 'Status', status, status === '' ? 'All' : status === 'active' ? 'Active' : 'Inactive', () => f.set({ status: 'active' }), status === 'active'),
+    chip('subjectId', 'Teaches', subjectId, subjectName(subjectId), () => f.set({ subjectId: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+  ];
 
   async function doToggle() {
     if (!toggle) return;
@@ -53,7 +62,7 @@ export default function StaffPage() {
     setToggleError(null);
     try {
       const res = await apiSend<Wrapped<StaffMember>>('PATCH', `/staff/${toggle.id}`, { status: next });
-      setData((prev) => (prev ? { data: prev.data.map((s) => (s.id === toggle.id ? { ...s, ...(res?.data ?? { status: next }) } : s)) } : prev));
+      setData((prev) => (prev ? { ...prev, data: prev.data.map((s) => (s.id === toggle.id ? { ...s, ...(res?.data ?? { status: next }) } : s)) } : prev));
       flash.show('success', `${toggle.name} is now ${next}.${next === 'inactive' ? ' They can no longer sign in.' : ''}`);
       setToggle(null);
     } catch (err) {
@@ -87,36 +96,41 @@ export default function StaffPage() {
         <WhoTeaches />
       ) : (
         <Card padded={false}>
-          <FilterBar>
-            <label className="relative block sm:w-72">
-              <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Search</span>
-              <Search className="pointer-events-none absolute bottom-2.5 left-3 h-4 w-4 text-slate-400" aria-hidden />
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Name, email, designation"
-                className={cx(controlClass, 'h-10 pl-9 sm:h-9')}
-              />
-            </label>
-            <Select label="Role" value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
-              <option value="">All roles</option>
-              <option value="teacher">Teachers</option>
-              <option value="branch_admin">Admins</option>
-              <option value="super_admin">Owners</option>
-            </Select>
-            <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="">All</option>
-            </Select>
+          <FilterBar
+            search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Name, email, phone, designation" />}
+            chips={chips}
+            onClear={f.clear}
+            extra={data?.meta ? <ResultCount total={data.meta.total} noun={['person', 'people']} filtered={f.active > 0} /> : undefined}
+          >
+            <SelectFilter label="Role" name="role" value={role} allLabel="All roles" options={ROLE_OPTIONS} onChange={(v) => f.set({ role: v })} />
+            <SelectFilter
+              label="Status"
+              name="status"
+              value={status}
+              options={[
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+                { value: '', label: 'All' },
+              ]}
+              onChange={(v) => f.set({ status: v })}
+              className="sm:w-32"
+            />
+            <SelectFilter
+              label="Subject"
+              name="subjectId"
+              value={subjectId}
+              allLabel="Any subject"
+              options={(subjects.data?.data ?? []).map((x) => ({ value: x.id, label: x.name }))}
+              onChange={(v) => f.set({ subjectId: v })}
+            />
+            <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} allClassesLabel="Any class" />
           </FilterBar>
           {loading && !data ? (
             <Spinner label="Loading staff…" />
           ) : error ? (
             <ErrorState message={error} onRetry={reload} />
           ) : rows.length === 0 ? (
-            <EmptyState title="No staff match" description="Try another search or status." />
+            f.active > 0 ? <FilteredEmpty what="staff" chips={chips} onClear={f.clear} /> : <EmptyState title="No staff yet" description="Add teachers and office staff to give them a login." />
           ) : (
             <Table>
               <thead>

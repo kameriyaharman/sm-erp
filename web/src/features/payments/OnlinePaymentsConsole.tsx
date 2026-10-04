@@ -1,17 +1,22 @@
 'use client';
 
+import FeesNav from '@/features/fees/FeesNav';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CalendarDays, CircleX, Download, FileText, IndianRupee, RefreshCw, Settings2, X } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Notice, Page, PageHeader, Pagination, SearchInput, Select, Spinner, Stat, Table, Td, Th, cx } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Notice, Page, PageHeader, Pagination, Spinner, Stat, Table, Td, Th, cx } from '@/components/ui';
+import { ClassSectionFilter, DateRangeFilter, FilterBar, FilterSearch, FilteredEmpty, SelectFilter, chip, classSectionChips, describeRange, useClassOptions, useUrlFilters } from '@/components/filters';
 import { qs, useApi } from '@/lib/useApi';
 import { apiSend, openPdf } from '@/lib/session';
-import { formatDateTime, formatInr } from '@/lib/format';
-import { FilterBar, errorText, useDebounced } from '@/features/admin/shared';
+import { formatDateTime, formatInr, todayIso } from '@/lib/format';
+import { errorText } from '@/features/admin/shared';
 import { CopyButton, ModeBadge, ORDER_STATUS_LABEL, OrderStatusBadge } from './bits';
 import type { OnlinePaymentDetail, OnlinePaymentRow, OnlineStatus, OnlineSummary, ReconcileResult } from './types';
 
-type Paged = { data: OnlinePaymentRow[]; meta: { page: number; limit: number; total: number; totalPages: number } };
+type Paged = {
+  data: OnlinePaymentRow[];
+  meta: { page: number; limit: number; total: number; totalPages: number; totals?: { orders: number; amount: string; receipts: number; collected: string } };
+};
 
 const STATUSES: OnlineStatus[] = ['paid', 'created', 'failed', 'expired', 'needs_review'];
 
@@ -19,20 +24,29 @@ const STATUSES: OnlineStatus[] = ['paid', 'created', 'failed', 'expired', 'needs
  * Fees -> Online payments: every payment parents and students started online, with Razorpay ids,
  * the receipt it produced, and Reconcile for payments whose webhook never arrived.
  */
-export default function OnlinePaymentsConsole() {
-  const [status, setStatus] = useState<OnlineStatus | ''>('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const q = useDebounced(search.trim(), 300);
-  useEffect(() => setPage(1), [status, from, to, q]);
+/** /fees/online-payments?search=…&classId=…&sectionId=…&status=paid&from=…&to=… */
+const DEFAULTS = { search: '', classId: '', sectionId: '', status: '', from: '', to: '' };
 
-  const list = useApi<Paged>(`/finance/online-payments${qs({ status, from, to, search: q, page, limit: 25 })}`);
+export default function OnlinePaymentsConsole() {
+  const f = useUrlFilters(DEFAULTS);
+  const cls = useClassOptions();
+  const { search, classId, sectionId, from, to } = f.values;
+  const status = (STATUSES as string[]).includes(f.values.status) ? (f.values.status as OnlineStatus) : '';
+  const setStatus = (v: OnlineStatus | '') => f.set({ status: v });
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const list = useApi<Paged>(`/finance/online-payments${qs({ status, from, to, search, classId, sectionId, page: f.page, limit: 25 })}`);
   const summary = useApi<{ data: OnlineSummary }>('/finance/online-payments/summary');
   const sm = summary.data?.data;
   const rows = list.data?.data ?? [];
+  const totals = list.data?.meta.totals;
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+    chip('status', 'Status', status, status ? ORDER_STATUS_LABEL[status] : '', () => f.set({ status: '' })),
+    (from || to) && { key: 'date', label: `Started: ${describeRange(from, to, todayIso())}`, onRemove: () => f.set({ from: '', to: '' }) },
+  ];
+  const filtered = chips.some(Boolean);
 
   const refreshAll = () => {
     list.reload();
@@ -41,6 +55,7 @@ export default function OnlinePaymentsConsole() {
 
   return (
     <Page wide>
+      <FeesNav />
       <PageHeader
         title="Online payments"
         description="Fees paid by parents and students from their portal through your Razorpay account."
@@ -79,30 +94,40 @@ export default function OnlinePaymentsConsole() {
       </div>
 
       <Card padded={false}>
-        <FilterBar>
-          <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value as OnlineStatus | '')}>
-            <option value="">All</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {ORDER_STATUS_LABEL[s]}
-              </option>
-            ))}
-          </Select>
-          <Input label="From" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
-          <Input label="To" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
-          <SearchInput label="Search" showLabel placeholder="Student, admission no., Razorpay id, receipt" value={search} onChange={(e) => setSearch(e.target.value)} containerClassName="sm:!min-w-[18rem]" />
+        <FilterBar
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Student, admission no., Razorpay id, receipt" />}
+          chips={chips}
+          onClear={f.clear}
+        >
+          <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+          <SelectFilter
+            label="Status"
+            name="status"
+            value={status}
+            allLabel="All"
+            options={STATUSES.map((s) => ({ value: s, label: ORDER_STATUS_LABEL[s] }))}
+            onChange={(v) => setStatus(v as OnlineStatus | '')}
+          />
+          <DateRangeFilter label="Started" from={from} to={to} onChange={(r) => f.set(r)} />
         </FilterBar>
+        {totals && (
+          <p className="border-b border-line px-4 py-2.5 text-13 text-slate-600 dark:text-slate-300 sm:px-5" data-online-totals>
+            <span className="font-medium tabular-nums text-slate-900 dark:text-white">{totals.orders.toLocaleString('en-IN')}</span> payment{totals.orders === 1 ? '' : 's'}
+            {filtered ? ' match the filters' : ''} · <span className="font-medium tabular-nums text-slate-900 dark:text-white">{formatInr(totals.collected)}</span> collected in{' '}
+            {totals.receipts} receipt{totals.receipts === 1 ? '' : 's'}
+          </p>
+        )}
 
         {list.error ? (
           <ErrorState message={list.error} onRetry={list.reload} />
         ) : list.loading && !list.data ? (
           <Spinner skeleton label="Loading payments" />
         ) : rows.length === 0 ? (
-          <EmptyState
-            icon={<IndianRupee aria-hidden />}
-            title={status || from || to || q ? 'No payments match these filters' : 'No online payments yet'}
-            description={status || from || to || q ? 'Clear a filter to see more.' : 'When a parent or student presses "Pay now" in their portal, the payment shows up here.'}
-          />
+          filtered ? (
+            <FilteredEmpty what="payments" chips={chips} onClear={f.clear} icon={<IndianRupee aria-hidden />} />
+          ) : (
+            <EmptyState icon={<IndianRupee aria-hidden />} title="No online payments yet" description='When a parent or student presses "Pay now" in their portal, the payment shows up here.' />
+          )
         ) : (
           <>
             {/* Phones: one card per payment */}
@@ -185,7 +210,7 @@ export default function OnlinePaymentsConsole() {
                 ))}
               </tbody>
             </Table>
-            <Pagination page={page} totalPages={list.data?.meta.totalPages ?? 1} onChange={setPage} />
+            <Pagination page={f.page} totalPages={list.data?.meta.totalPages ?? 1} onChange={f.setPage} />
           </>
         )}
       </Card>

@@ -128,3 +128,25 @@ export const analyticsQuery = z
     academicYearId: uuid.optional(),
   })
   .strict();
+
+// ---------------------------------------------------------------- one-off charges
+
+/**
+ * POST /fees/charges: bill a one-off amount to one student or to a class / section
+ * (one invoice per student). batchId makes the request idempotent; dryRun previews it.
+ */
+export const chargeBody = z
+  .object({
+    scope: z.union([
+      z.object({ studentId: uuid }).strict(),
+      z.object({ classId: uuid, sectionId: uuid.optional() }).strict(),
+    ]),
+    feeHeadId: uuid,
+    description: z.string().trim().min(2, 'Describe the charge (e.g. Annual picnic)').max(255),
+    amount: positiveRupees,
+    dueDate: isoDate,
+    batchId: uuid.optional(),            // required to bill; the same batchId never bills a student twice
+    dryRun: z.boolean().default(false),  // preview: students, total, already charged
+  })
+  .strict()
+  .refine((b) => b.dryRun || b.batchId, { message: 'batchId is required', path: ['batchId'] });

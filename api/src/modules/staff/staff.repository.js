@@ -21,15 +21,51 @@ const SELECT = `
     FROM staff_profiles sf
     JOIN users u ON u.id = sf.user_id`;
 
-export async function listStaff(scope) {
+// Current-year sections a staff member is connected to: class teacher of, or teaches a subject in.
+const TEACHES_IN = `
+  SELECT s.id AS section_id, s.class_id, NULL::uuid AS subject_id
+    FROM sections s JOIN academic_years ay ON ay.id = s.academic_year_id AND ay.is_current
+   WHERE s.class_teacher_id = sf.id AND s.deleted_at IS NULL
+  UNION ALL
+  SELECT s.id, s.class_id, a.subject_id
+    FROM teacher_subject_assignments a
+    JOIN academic_years ay ON ay.id = a.academic_year_id AND ay.is_current
+    JOIN sections s        ON s.id = a.section_id AND s.deleted_at IS NULL
+   WHERE a.staff_id = sf.id`;
+
+export async function listStaff(scope, { role, status, subjectId, classId, sectionId, search } = {}) {
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   const { rows } = await query(
     `${SELECT}
       WHERE sf.deleted_at IS NULL AND u.deleted_at IS NULL
         AND ($1::uuid IS NULL OR sf.tenant_id = $1) AND ($2::uuid[] IS NULL OR sf.branch_id = ANY ($2))
+        AND ($3::text IS NULL OR u.role::text = $3)
+        AND ($4::text IS NULL OR sf.status::text = $4)
+        AND (($5::uuid IS NULL AND $6::uuid IS NULL AND $7::uuid IS NULL) OR EXISTS (
+              SELECT 1 FROM (${TEACHES_IN}) t
+               WHERE ($5::uuid IS NULL OR t.subject_id = $5)
+                 AND ($6::uuid IS NULL OR t.class_id = $6)
+                 AND ($7::uuid IS NULL OR t.section_id = $7)))
+        AND ($8::text IS NULL OR concat_ws(' ', u.first_name, u.last_name) ILIKE $8 OR u.email ILIKE $8 OR u.phone ILIKE $8
+             OR sf.designation ILIKE $8 OR sf.department ILIKE $8 OR sf.employee_code ILIKE $8)
       ORDER BY sf.status, u.first_name, u.last_name`,
-    [scope.tenantId, scope.branchIds],
+    [scope.tenantId, scope.branchIds, role ?? null, status ?? null, subjectId ?? null, classId ?? null, sectionId ?? null, like],
   );
   return rows;
+}
+
+/** Headline counts for the staff screen (whole scope, not the filters). */
+export async function staffCounts(scope) {
+  const { rows: [r] } = await query(
+    `SELECT count(*) FILTER (WHERE sf.status = 'active')::int AS active,
+            count(*) FILTER (WHERE sf.status = 'active' AND u.role = 'teacher')::int AS teachers,
+            count(*)::int AS total
+       FROM staff_profiles sf JOIN users u ON u.id = sf.user_id
+      WHERE sf.deleted_at IS NULL AND u.deleted_at IS NULL
+        AND ($1::uuid IS NULL OR sf.tenant_id = $1) AND ($2::uuid[] IS NULL OR sf.branch_id = ANY ($2))`,
+    [scope.tenantId, scope.branchIds],
+  );
+  return r;
 }
 
 export async function getStaff(db, id) {

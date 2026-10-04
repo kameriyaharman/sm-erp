@@ -11,6 +11,7 @@ export const defaultersQuerySchema = z
     branchId: z.string().uuid().optional(),
     classId: z.string().uuid().optional(),
     sectionId: z.string().uuid().optional(),
+    search: z.string().trim().min(1).max(100).optional(),  // student name, admission no., parent name or phone
     asOf: isoDate.optional(),                          // default: today
     minDaysOverdue: z.coerce.number().int().min(0).max(3650).default(0),
     minAmount: z.coerce.number().min(0).default(0),

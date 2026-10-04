@@ -72,7 +72,15 @@ export async function deleteStops(db, ids) {
   if (ids.length) await db.query(`DELETE FROM transport_stops WHERE id = ANY ($1)`, [ids]);
 }
 
-export async function routeStudents(db, routeId) {
+const RIDER_FILTERS = `
+        AND ($2::uuid IS NULL OR x.stop_id = $2)
+        AND ($3::uuid IS NULL OR sp.class_id = $3)
+        AND ($4::uuid IS NULL OR sp.section_id = $4)
+        AND ($5::text IS NULL OR concat_ws(' ', u.first_name, u.last_name) ILIKE $5 OR sp.admission_number ILIKE $5 OR pu.phone ILIKE $5)`;
+
+const likeOf = (search) => (search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null);
+
+export async function routeStudents(db, routeId, { stopId, classId, sectionId, search } = {}) {
   const { rows } = await db.query(
     `SELECT sp.id AS student_id, concat_ws(' ', u.first_name, u.last_name) AS name, sp.admission_number,
             NULLIF(concat_ws(' ', c.name, s.name), '') AS class_label, st.id AS stop_id, st.name AS stop_name
@@ -82,9 +90,38 @@ export async function routeStudents(db, routeId) {
        JOIN transport_stops st  ON st.id = x.stop_id
        LEFT JOIN classes c      ON c.id = sp.class_id
        LEFT JOIN sections s     ON s.id = sp.section_id
+       LEFT JOIN users pu       ON pu.id = sp.parent_id
       WHERE x.route_id = $1
+      ${RIDER_FILTERS}
       ORDER BY st.sequence_no, name`,
-    [routeId],
+    [routeId, stopId ?? null, classId ?? null, sectionId ?? null, likeOf(search)],
+  );
+  return rows;
+}
+
+/** Every rider of the routes in scope (all routes or one), with the same filters, paged. */
+export async function listRiders(scope, { routeId, stopId, classId, sectionId, search, page, limit }) {
+  const { rows } = await query(
+    `SELECT sp.id AS student_id, concat_ws(' ', u.first_name, u.last_name) AS name, sp.admission_number,
+            NULLIF(concat_ws(' ', c.name, s.name), '') AS class_label,
+            r.id AS route_id, r.name AS route_name, r.vehicle_number,
+            st.id AS stop_id, st.name AS stop_name, to_char(st.pickup_time, 'HH24:MI') AS pickup_time, to_char(st.drop_time, 'HH24:MI') AS drop_time,
+            concat_ws(' ', pu.first_name, pu.last_name) AS parent_name, pu.phone AS parent_phone,
+            count(*) OVER () AS total_count
+       FROM student_transport x
+       JOIN transport_routes r  ON r.id = x.route_id AND r.deleted_at IS NULL
+       JOIN student_profiles sp ON sp.id = x.student_id AND sp.deleted_at IS NULL
+       JOIN users u             ON u.id = sp.user_id
+       JOIN transport_stops st  ON st.id = x.stop_id
+       LEFT JOIN classes c      ON c.id = sp.class_id
+       LEFT JOIN sections s     ON s.id = sp.section_id
+       LEFT JOIN users pu       ON pu.id = sp.parent_id
+      WHERE ($6::uuid IS NULL OR r.tenant_id = $6) AND ($7::uuid[] IS NULL OR r.branch_id = ANY ($7))
+        AND ($1::uuid IS NULL OR x.route_id = $1)
+      ${RIDER_FILTERS}
+      ORDER BY r.name, st.sequence_no, name
+      LIMIT $8 OFFSET $9`,
+    [routeId ?? null, stopId ?? null, classId ?? null, sectionId ?? null, likeOf(search), scope.tenantId, scope.branchIds, limit, (page - 1) * limit],
   );
   return rows;
 }

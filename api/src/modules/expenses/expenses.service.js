@@ -70,13 +70,13 @@ export async function deleteExpense(auth, id, { reason } = {}) {
 }
 
 /** Month totals for the current academic year up to this month, zero-filled, oldest first (last `months`). */
-export async function monthlyExpenses(auth, { months, branchId }) {
+export async function monthlyExpenses(auth, { months, branchId, ...filters }) {
   const scope = await staffScope(auth, { branchId });
   const window = await repo.currentYearWindow(scope);
   if (!window?.start_date) return [];
   const today = window.today;
   const list = monthsBetween(window.start_date, today).slice(-months);
   if (list.length === 0) return [];
-  const totals = await repo.monthlyTotals(scope, `${list[0]}-01`, monthRange(list.at(-1)).to);
+  const totals = await repo.monthlyTotals(scope, `${list[0]}-01`, monthRange(list.at(-1)).to, filters);
   return list.map((month) => ({ month, amount: totals.get(month) ?? '0.00' }));
 }

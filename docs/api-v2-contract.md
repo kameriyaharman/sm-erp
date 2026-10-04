@@ -646,6 +646,10 @@ office. Money in/out as rupee strings; internally integer paise.
 ## Changes
 (record deviations here)
 
+- **List filters and one-off charges (migrations `014`, `015`), section 16.** Additive except three list responses
+  that gained paging: `GET /staff`, `GET /documents/certificates` and `GET /notices` now return `{ data, meta }`
+  (`data` keeps its shape). New: `GET /ledger/entries.csv`, `GET /transport/riders`, `POST /fees/charges`.
+
 Backend implementation (migration `009_school_operations.sql`). All changes are additive or pin down
 behaviour the contract left open; no field was renamed or removed.
 
@@ -722,3 +726,84 @@ Client: "student add karne wale me student ki address jese chije missing h". The
   422 `SECTION_NOT_IN_YEAR`, `TERMS_OUTSIDE_YEAR`, `CAPACITY_TOO_LOW`, `STAFF_NOT_FOUND`, `CLASS_INACTIVE`, `NO_CURRENT_YEAR`.
 - PDFs: `schoolFromRow` prefers the new `branches` columns (`board`, `website`, `principal_name`) over
   `settings.documents`; saving the school profile removes those three keys from `settings.documents`.
+
+---
+
+## 16. List filters and one-off charges (migrations `014`, `015`)
+
+The school owner asked for proper class-wise filters on every list. Every list now filters **on the server**
+(so totals and paging match the filters), and the web keeps the filters in the URL query string with the same
+names, so `/fees?classId=…&status=overdue` is a shareable view.
+
+### 16.1 Conventions
+- All query schemas stay `.strict()`: an unknown parameter is 400 `VALIDATION_ERROR`.
+- `classId` / `sectionId` filter on the student's **current** class / section. A `sectionId` of another class
+  simply matches nothing. Teachers stay inside their scope whatever they ask for (another class → empty list,
+  or 403 `NOT_ASSIGNED` where a single section is required, as before).
+- `from` / `to` are inclusive `YYYY-MM-DD`; timestamps are compared by their day in the school's time zone.
+  `from` after `to` → 400 (`details.query.to`).
+- `search` is trimmed, 1–100 characters, case-insensitive substring (`%`/`_` are literal).
+- Lists that were plain arrays and now page also return `meta: { page, limit, total, totalPages }`; `data` is unchanged.
+
+### 16.2 Parameters per list (new ones in **bold**)
+| Endpoint | Filters |
+|---|---|
+| `GET /fees/students` | `classId, sectionId, search, status=all\|pending\|overdue\|paid, sort, page, limit`; `meta.totals` cover the filtered set |
+| `GET /finance/defaulters` | `classId, sectionId, minDaysOverdue, minAmount, **search** (student, admission no., parent name/phone), sort` |
+| `GET /finance/online-payments` | `status, from, to, search, **classId, sectionId**`; + **`meta.totals { orders, amount, receipts, collected }`** for the filtered set |
+| `GET /ledger` | `from, to, direction, category, accountId, source, search, includeDeleted, **paymentMode, classId, sectionId**` (class/section: fee entries of students now in it); rows + **`student { id, name, admissionNumber, classLabel }`** |
+| **`GET /ledger/entries.csv`** | same filters as `GET /ledger` (≤ 1 year), one row per entry + total row, no running balance |
+| `GET /expenses` | `from, to, category, **paymentMode, search** (description, vendor, reference, voucher no.)`; `GET /expenses/monthly` takes the same `category, paymentMode, search` |
+| `GET /students` | `classId, sectionId, status, search, sort, **gender=male\|female\|other, transport=yes\|no**` |
+| `GET /staff` | **`role, status=active\|inactive, subjectId, classId, sectionId` (teaches / class teacher, current year), `search`**; response now `{ data, meta: { total, counts: { active, teachers, total } } }` (counts = whole scope) |
+| `GET /academics/attendance/history` | unchanged (`sectionId, month`); student search / below-75% are applied in the page |
+| `GET /homework` | `sectionId, **classId, subjectId, from, to, dateField=assigned\|due, search** (title, details)` |
+| `GET /exams` | **`termId, status, examType, classId` (has a paper for the class), `search`** |
+| `GET /exams/:id/papers` | `classId, **subjectId**` |
+| `GET /documents/sections/:id/report-cards` | `termId, **status, result, search** (name, roll, admission no.)` |
+| `GET /documents/certificates` | `studentId, type, **status=issued\|cancelled, from, to (issued), classId, sectionId, search, page**`; now `{ data, meta }` |
+| `GET /notices` | **`audience, classId, pinned=true\|false, from, to (posted), search, page`** (+ `limit`); now `{ data, meta }`; each role still only sees its own feed |
+| `GET /transport/routes/:id/students` | **`stopId, classId, sectionId, search`** |
+| **`GET /transport/riders`** | **`routeId, stopId, classId, sectionId, search, page, limit`** → `{ data: [ { studentId, name, admissionNumber, classLabel, route { id, name, vehicleNumber }, stop { id, name, pickupTime, dropTime }, parent { name, phone } } ], meta }` |
+| `GET /notifications/logs` | `status, eventType, batchId, **from, to, search** (phone digits, recipient / student name, admission no.)` |
+| `POST /notifications/fee-reminders/run` | **`classId, sectionId`** (remind only that class / section) |
+| `GET /portal-access` | `type, search, classId, sectionId, status` + **`status=has_login`** (temporary, active or locked) |
+
+Indexes for the filters that would otherwise scan a branch: migration `014_list_filter_indexes.sql`.
+
+### 16.3 One-off charges: `POST /fees/charges` (ADMINS)
+An extra amount on top of the class fee structure (exam fee, picnic, lost ID card…), billed to one student or to
+every current student (`enrolled` / `suspended`) of a class or section, as **one invoice per student** with one
+ad-hoc line (no structure instalments are pulled in). Same numbering, totals triggers and fee-cache busting as
+`POST /fees/invoices`; the invoices appear in Fee collection, defaulters and the parent app like any other.
+
+```
+POST /fees/charges
+{ scope: { studentId } | { classId, sectionId? },
+  feeHeadId, description (2-255), amount (rupees > 0, ≤ 2 decimals), dueDate,
+  batchId?: uuid,            // required unless dryRun: makes the request idempotent
+  dryRun?: false }
+```
+- `dryRun: true` → 200 `{ data: { dryRun: true, target: { …scope, label: "Grade 6 A" }, feeHead, description, amount, dueDate,
+  students, alreadyCharged, invoicesToCreate, total, preview: [ { id, name, admissionNumber, classLabel } ] (≤100) } }`.
+- Billing → 201 `{ data: { dryRun: false, batchId, target, feeHead, …, students, alreadyCharged, invoicesCreated, total, invoices: [ { id, studentId } ] } }`
+  (200 with `invoicesCreated: 0` when everyone in the batch was billed already).
+- **Idempotent per batch**: each invoice stores `charge_batch_id`; `(charge_batch_id, student_id)` is unique
+  (migration `015_fee_charges.sql`). Re-sending a batch only bills students not billed in it yet, so a retry or
+  a double click never charges twice. The target students are locked while billing.
+- Scope: branch admin = own branch; out-of-scope student / class → 404. Errors: 404 `STUDENT_NOT_FOUND` /
+  `CLASS_NOT_FOUND`, 422 `SECTION_NOT_IN_CLASS`, `STUDENT_NOT_ACTIVE` (left the school), `FEE_HEAD_NOT_FOUND`
+  (unknown / inactive head of that branch), `NO_CURRENT_YEAR`, `TOO_MANY_STUDENTS` (> 2000). Teachers / parents → 403.
+- The invoice goes into the branch's current academic year; `periodLabel` = the description (first 50 characters),
+  `notes` = "One-off charge".
+
+### 16.4 Web
+- Shared filter kit `web/src/components/filters.tsx` (+ pure helpers `web/src/lib/filters-core.ts`, unit-tested in
+  `web/test/filters-core.test.mjs`): `useUrlFilters`, `FilterBar` (search, controls, chips, "Clear filters", phone bottom
+  sheet), `ClassSectionFilter` (teachers: only their sections), `DateRangeFilter` (Today, This week, This month,
+  Last month, This academic year, Custom), `SelectFilter`, `StatusFilter`, `ToggleFilter`.
+- Fees screens share a sub-navigation: Collection | Fee structure | Defaulters | Online payments.
+- `/fees/setup` opens on a list of every class (yearly fee, fee lines, students set up, status) with **Set fees** /
+  **Edit fees**; `?classId=` opens the class editor (Add fee → head or new head, frequency, amount, generated instalments
+  with editable due dates; Save → impact preview → confirm → offer to apply to students without these fees).
+- "Add charge" on Fee collection and on the student profile's Fees tab uses `POST /fees/charges`.

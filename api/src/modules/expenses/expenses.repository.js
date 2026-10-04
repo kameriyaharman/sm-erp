@@ -4,7 +4,10 @@ const FILTER = `
   e.deleted_at IS NULL
   AND ($1::uuid IS NULL OR e.tenant_id = $1) AND ($2::uuid[] IS NULL OR e.branch_id = ANY ($2))
   AND ($3::date IS NULL OR e.expense_date >= $3) AND ($4::date IS NULL OR e.expense_date <= $4)
-  AND ($5::text IS NULL OR e.category = $5)`;
+  AND ($5::text IS NULL OR e.category = $5)
+  AND ($6::text IS NULL OR e.payment_mode = $6)
+  AND ($7::text IS NULL OR e.description ILIKE $7 OR e.vendor ILIKE $7 OR e.reference ILIKE $7
+       OR EXISTS (SELECT 1 FROM ledger_entries lv WHERE lv.expense_id = e.id AND lv.source = 'expense' AND lv.voucher_no ILIKE $7))`;
 
 const SELECT = `
   SELECT e.id, e.tenant_id, e.branch_id, e.category, e.description, e.amount::text AS amount, e.expense_date, e.payment_mode,
@@ -15,10 +18,11 @@ const SELECT = `
     LEFT JOIN ledger_entries le ON le.expense_id = e.id AND le.source = 'expense'
     LEFT JOIN accounts a ON a.id = le.account_id`;
 
-export async function listExpenses({ scope, from, to, category, page, limit }) {
-  const params = [scope.tenantId, scope.branchIds, from ?? null, to ?? null, category ?? null];
+export async function listExpenses({ scope, from, to, category, paymentMode, search, page, limit }) {
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  const params = [scope.tenantId, scope.branchIds, from ?? null, to ?? null, category ?? null, paymentMode ?? null, like];
   const [{ rows }, { rows: totals }] = await Promise.all([
-    query(`${SELECT} WHERE ${FILTER} ORDER BY e.expense_date DESC, e.created_at DESC LIMIT $6 OFFSET $7`, [...params, limit, (page - 1) * limit]),
+    query(`${SELECT} WHERE ${FILTER} ORDER BY e.expense_date DESC, e.created_at DESC LIMIT $8 OFFSET $9`, [...params, limit, (page - 1) * limit]),
     query(
       `SELECT e.category, count(*)::int AS n, sum(e.amount)::numeric(14,2)::text AS amount
          FROM expenses e WHERE ${FILTER} GROUP BY e.category ORDER BY sum(e.amount) DESC`,
@@ -64,13 +68,14 @@ export async function currentYearWindow(scope) {
   return rows[0];
 }
 
-export async function monthlyTotals(scope, from, to) {
+export async function monthlyTotals(scope, from, to, { category = null, paymentMode = null, search = null } = {}) {
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   const { rows } = await query(
     `SELECT to_char(e.expense_date, 'YYYY-MM') AS month, sum(e.amount)::numeric(14,2)::text AS amount
        FROM expenses e
       WHERE ${FILTER}
       GROUP BY 1`,
-    [scope.tenantId, scope.branchIds, from, to, null],
+    [scope.tenantId, scope.branchIds, from, to, category, paymentMode, like],
   );
   return new Map(rows.map((r) => [r.month, r.amount]));
 }

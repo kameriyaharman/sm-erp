@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { DateRangeFilter, FilterBar, FilterSearch, FilteredEmpty, ResultCount, SelectFilter, chip, describeRange, useUrlFilters } from '@/components/filters';
 import { RotateCw } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, ErrorState, Notice, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Th, type BadgeTone } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { ApiError, apiSend } from '@/lib/session';
-import { formatDateTime, titleCase } from '@/lib/format';
-import { FilterBar, errorText, useFlash } from './shared';
+import { formatDateTime, titleCase, todayIso } from '@/lib/format';
+import { errorText, useFlash } from './shared';
 import type { LogEvent, LogStatus, NotificationLog, Paged, Wrapped } from './types';
 
 const STATUS_TONE: Record<LogStatus, BadgeTone> = { sent: 'green', sending: 'indigo', failed: 'red', abandoned: 'gray' };
@@ -18,15 +18,21 @@ const EVENT_LABEL: Record<LogEvent, string> = {
   attendance_correction: 'Attendance correction',
 };
 
+const STATUS_LABEL: Record<LogStatus, string> = { sent: 'Sent', sending: 'Sending', failed: 'Failed', abandoned: 'Abandoned' };
+
+/** /notifications?status=failed&eventType=…&from=…&to=…&search=… */
 export default function NotificationsPage() {
-  const params = useSearchParams();
   const flash = useFlash();
-  const [status, setStatus] = useState<'' | LogStatus>('');
-  const [eventType, setEventType] = useState<'' | LogEvent>((params.get('eventType') as LogEvent | null) ?? '');
-  const [page, setPage] = useState(1);
+  const f = useUrlFilters({ search: '', status: '', eventType: '', from: '', to: '' });
+  const { search, status, eventType, from, to } = f.values;
   const [retrying, setRetrying] = useState<string | null>(null);
-  useEffect(() => setPage(1), [status, eventType]);
-  const { data, error, loading, reload } = useApi<Paged<NotificationLog>>(`/notifications/logs${qs({ status, eventType, page, limit: 25 })}`);
+  const { data, error, loading, reload } = useApi<Paged<NotificationLog>>(`/notifications/logs${qs({ search, status, eventType, from, to, page: f.page, limit: 25 })}`);
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('status', 'Status', status, STATUS_LABEL[status as LogStatus], () => f.set({ status: '' })),
+    chip('eventType', 'Type', eventType, EVENT_LABEL[eventType as LogEvent], () => f.set({ eventType: '' })),
+    (from || to) && { key: 'date', label: `Sent: ${describeRange(from, to, todayIso())}`, onRemove: () => f.set({ from: '', to: '' }) },
+  ];
 
   async function retry(log: NotificationLog) {
     setRetrying(log.id);
@@ -51,30 +57,26 @@ export default function NotificationsPage() {
         <Notice tone="info">No SMS or WhatsApp provider is configured in this demo, so messages are recorded but fail to deliver. Connect a provider (MSG91 / Gupshup) to send them for real.</Notice>
       </div>
       <Card padded={false}>
-        <FilterBar>
-          <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-            <option value="">All statuses</option>
-            <option value="sent">Sent</option>
-            <option value="sending">Sending</option>
-            <option value="failed">Failed</option>
-            <option value="abandoned">Abandoned</option>
-          </Select>
-          <Select label="Type" value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)}>
-            <option value="">All types</option>
-            {(Object.keys(EVENT_LABEL) as LogEvent[]).map((k) => (
-              <option key={k} value={k}>
-                {EVENT_LABEL[k]}
-              </option>
-            ))}
-          </Select>
-          {data && <p className="pb-2 text-sm text-slate-500 dark:text-slate-400">{data.meta.total.toLocaleString('en-IN')} messages</p>}
+        <FilterBar
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Phone, parent or student name" />}
+          chips={chips}
+          onClear={f.clear}
+          extra={data ? <ResultCount total={data.meta.total} noun={['message', 'messages']} filtered={f.active > 0} /> : undefined}
+        >
+          <SelectFilter label="Status" name="status" value={status} allLabel="All statuses" options={(Object.keys(STATUS_LABEL) as LogStatus[]).map((k) => ({ value: k, label: STATUS_LABEL[k] }))} onChange={(v) => f.set({ status: v })} />
+          <SelectFilter label="Type" name="eventType" value={eventType} allLabel="All types" options={(Object.keys(EVENT_LABEL) as LogEvent[]).map((k) => ({ value: k, label: EVENT_LABEL[k] }))} onChange={(v) => f.set({ eventType: v })} />
+          <DateRangeFilter label="Sent" from={from} to={to} today={todayIso()} max={todayIso()} onChange={(r) => f.set(r)} />
         </FilterBar>
         {loading && !data ? (
           <Spinner label="Loading messages…" />
         ) : error ? (
           <ErrorState message={error} onRetry={reload} />
         ) : !data?.data.length ? (
-          <EmptyState title="No messages" description={status || eventType ? 'Nothing matches these filters.' : 'Absence alerts, fee reminders and notices sent by SMS / WhatsApp appear here.'} />
+          f.active > 0 ? (
+            <FilteredEmpty what="messages" chips={chips} onClear={f.clear} />
+          ) : (
+            <EmptyState title="No messages" description="Absence alerts, fee reminders and notices sent by SMS / WhatsApp appear here." />
+          )
         ) : (
           <div className={loading ? 'opacity-60' : undefined}>
             <Table>
@@ -123,7 +125,7 @@ export default function NotificationsPage() {
                 ))}
               </tbody>
             </Table>
-            <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={setPage} />
+            <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={f.setPage} />
           </div>
         )}
       </Card>

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ArrowDownUp, CalendarX2 } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, Select, Spinner, Stat, Table, Td, Th, cx } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, Spinner, Stat, Table, Td, Th, cx } from '@/components/ui';
+import { ClassSectionFilter, FilterBar, FilterSearch, FilteredEmpty, ToggleFilter, chip, useClassOptions, useUrlFilters } from '@/components/filters';
 import { qs, useApi } from '@/lib/useApi';
 import { formatMonth } from '@/lib/format';
 import { dayLabel, thisMonth, useSections } from '@/features/teacher/useSections';
@@ -18,18 +19,22 @@ const SEGMENTS: { key: keyof Pick<AttendanceHistoryDay, 'present' | 'late' | 'ha
   { key: 'absent', label: 'Absent', bar: 'bg-red-500' },
 ];
 
+/** /attendance/history?classId=…&sectionId=…&month=2026-09&search=…&low=1&sort=low (teachers: their classes). */
 export default function AttendanceHistory() {
-  const { sections, defaultId, error: secError, reload: reloadSections, isTeacher } = useSections();
-  const [sectionId, setSectionId] = useState('');
-  const [month, setMonth] = useState(thisMonth());
-  const [lowFirst, setLowFirst] = useState(false);
-
-  useEffect(() => {
-    if (!sectionId && defaultId) setSectionId(defaultId);
-  }, [defaultId, sectionId]);
+  const { defaultId, error: secError, reload: reloadSections, isTeacher } = useSections();
+  const cls = useClassOptions();
+  const f = useUrlFilters({ classId: '', sectionId: '', month: '', search: '', low: '', sort: '' }, { ignoreInCount: ['sort', 'month'] });
+  const month = /^\d{4}-\d{2}$/.test(f.values.month) ? f.values.month : thisMonth();
+  // No section in the link: the teacher's own class (or the first one).
+  const sectionId = f.values.sectionId || defaultId || '';
+  const classId = f.values.classId || cls.section(sectionId)?.classId || '';
+  const lowFirst = f.values.sort === 'low';
+  const lowOnly = f.values.low === '1';
+  const search = f.values.search;
 
   const { data, error, loading, reload } = useApi<{ data: History }>(sectionId && month ? `/academics/attendance/history${qs({ sectionId, month })}` : null);
   const h = data?.data.section.id === sectionId && data.data.month === month ? data.data : null;
+  const sections = cls.loading && cls.classes.length === 0 ? null : cls.classes;
 
   const summary = useMemo(() => {
     if (!h) return null;
@@ -51,31 +56,38 @@ export default function AttendanceHistory() {
 
   const students = useMemo(() => {
     if (!h) return [];
-    const list = [...h.students];
-    if (lowFirst) list.sort((a, b) => (a.percentage ?? 101) - (b.percentage ?? 101));
+    const q = search.trim().toLowerCase();
+    let list = h.students.filter(
+      (s) => (!q || s.name.toLowerCase().includes(q) || (s.rollNumber ?? '').toLowerCase() === q) && (!lowOnly || (s.percentage !== null && s.percentage < LOW)),
+    );
+    if (lowFirst) list = [...list].sort((a, b) => (a.percentage ?? 101) - (b.percentage ?? 101));
     return list;
-  }, [h, lowFirst]);
+  }, [h, lowFirst, lowOnly, search]);
+
+  const chips = [
+    chip('search', 'Student', search, `“${search}”`, () => f.set({ search: '' })),
+    lowOnly && { key: 'low', label: `Below ${LOW}% only`, onRemove: () => f.set({ low: '' }) },
+  ];
 
   return (
     <Page wide>
       <PageHeader
         title="Attendance history"
         description={h ? `${h.section.label}, ${formatMonth(month)}` : 'Month-wise registers for a class'}
-        actions={
-          <>
-            <Select aria-label="Class" value={sectionId} onChange={(e) => setSectionId(e.target.value)} className="!w-52" disabled={!sections}>
-              {!sections && <option value="">Loading classes…</option>}
-              {sections?.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                  {s.mine ? ' (my class)' : ''}
-                </option>
-              ))}
-            </Select>
-            <Input aria-label="Month" type="month" value={month} max={thisMonth()} onChange={(e) => e.target.value && setMonth(e.target.value)} className="!w-40" />
-          </>
-        }
       />
+
+      <Card padded={false} className="mb-6">
+        <FilterBar
+          bordered={false}
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} label="Student" placeholder="Name or roll no." />}
+          chips={chips}
+          onClear={() => f.set({ search: '', low: '' })}
+        >
+          <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} requireSection onChange={f.set} />
+          <Input label="Month" type="month" value={month} max={thisMonth()} onChange={(e) => e.target.value && f.set({ month: e.target.value === thisMonth() ? '' : e.target.value })} className="filter-control sm:w-44" />
+          <ToggleFilter label={`Below ${LOW}% only`} name="low" checked={lowOnly} onChange={(on) => f.set({ low: on ? '1' : '' })} />
+        </FilterBar>
+      </Card>
 
       {secError ? (
         <ErrorState message={secError} onRetry={reloadSections} />
@@ -149,8 +161,9 @@ export default function AttendanceHistory() {
               title="Students"
               padded={false}
               className="min-w-0 lg:col-span-3"
+              description={students.length !== h.students.length ? `${students.length} of ${h.students.length} shown` : undefined}
               actions={
-                <Button variant="ghost" size="sm" icon={<ArrowDownUp className="h-3.5 w-3.5" aria-hidden />} onClick={() => setLowFirst((v) => !v)} aria-pressed={lowFirst}>
+                <Button variant="ghost" size="sm" icon={<ArrowDownUp className="h-3.5 w-3.5" aria-hidden />} onClick={() => f.set({ sort: lowFirst ? '' : 'low' })} aria-pressed={lowFirst}>
                   {lowFirst ? 'Lowest first' : 'Roll order'}
                 </Button>
               }
@@ -168,6 +181,13 @@ export default function AttendanceHistory() {
                   </tr>
                 </thead>
                 <tbody>
+                  {students.length === 0 && (
+                    <tr>
+                      <td colSpan={7}>
+                        <FilteredEmpty what="students" chips={chips} onClear={() => f.set({ search: '', low: '' })} />
+                      </td>
+                    </tr>
+                  )}
                   {students.map((s) => {
                     const low = s.percentage !== null && s.percentage < LOW;
                     return (

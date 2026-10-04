@@ -6,7 +6,8 @@ import { ArrowLeft, KeyRound, Printer, Smartphone, Users, UserRoundCheck } from 
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Pagination, SearchInput, Select, Spinner, Table, Tabs, Td, Th, cx } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { apiSend, currentUser } from '@/lib/session';
-import { FilterBar, errorText, fieldErrors, useClasses, useDebounced, useFlash } from '@/features/admin/shared';
+import { errorText, fieldErrors, useClasses, useFlash } from '@/features/admin/shared';
+import { ClassSectionFilter, FilterBar, FilterSearch, ResultCount, SelectFilter, chip, classSectionChips, useClassOptions, useUrlFilters } from '@/components/filters';
 import { CopyButton, CopyField, LOGIN_STATUS_LABEL, LoginStatusBadge, ago } from './bits';
 import LoginSlips from './LoginSlips';
 import type { BulkResult, LoginSlip, LoginStatus, PortalMeta, PortalRow, ResetResult } from './types';
@@ -18,18 +19,17 @@ const STATUSES: LoginStatus[] = ['none', 'temporary', 'active', 'locked', 'inact
  * Settings -> Portal logins: who can sign in to the family portal (parents with their mobile
  * number, students with their admission number), and temporary passwords for them.
  */
+/** /settings/users?type=student&search=…&classId=…&sectionId=…&status=none */
 export default function PortalLogins() {
-  const [kind, setKind] = useState<Kind>('parent');
-  const [search, setSearch] = useState('');
-  const [classId, setClassId] = useState('');
-  const [status, setStatus] = useState<LoginStatus | ''>('');
-  const [page, setPage] = useState(1);
-  const q = useDebounced(search.trim(), 300);
-  useEffect(() => setPage(1), [kind, q, classId, status]);
+  const f = useUrlFilters({ type: 'parent', search: '', classId: '', sectionId: '', status: '' }, { keep: ['type'], ignoreInCount: ['type'] });
+  const kind: Kind = f.values.type === 'student' ? 'student' : 'parent';
+  const { search, classId, sectionId } = f.values;
+  const status = (STATUSES as string[]).includes(f.values.status) || f.values.status === 'has_login' ? f.values.status : '';
+  const cls = useClassOptions();
   const { classes } = useClasses();
   const flash = useFlash(10000);
 
-  const list = useApi<{ data: PortalRow[]; meta: PortalMeta }>(`/portal-access${qs({ type: kind, search: q, classId, status, page, limit: 25 })}`);
+  const list = useApi<{ data: PortalRow[]; meta: PortalMeta }>(`/portal-access${qs({ type: kind, search, classId, sectionId, status, page: f.page, limit: 25 })}`);
   const rows = list.data?.data ?? [];
   const meta = list.data?.meta;
   const schoolCode = meta?.schoolCode ?? '';
@@ -41,6 +41,12 @@ export default function PortalLogins() {
 
   const loginUrl = typeof window !== 'undefined' ? `${window.location.origin}/login` : '/login';
   const total = meta ? Object.values(meta.counts).reduce((a, b) => a + b, 0) : 0;
+  const statusText = status === 'has_login' ? 'Has a login' : status ? LOGIN_STATUS_LABEL[status as LoginStatus] : '';
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+    chip('status', 'Login', status, statusText, () => f.set({ status: '' })),
+  ];
 
   return (
     <Page wide>
@@ -68,10 +74,7 @@ export default function PortalLogins() {
 
       <Tabs
         value={kind}
-        onChange={(v) => {
-          setKind(v);
-          setStatus('');
-        }}
+        onChange={(v) => f.set({ type: v, status: '' })}
         items={[
           { value: 'parent', label: 'Parents' },
           { value: 'student', label: 'Students' },
@@ -79,34 +82,26 @@ export default function PortalLogins() {
       />
 
       <Card padded={false}>
-        <FilterBar>
-          <SearchInput
-            label="Search"
-            showLabel
-            placeholder={kind === 'parent' ? 'Name, mobile, email or child' : 'Name or admission no.'}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            containerClassName="sm:!min-w-[16rem]"
+        <FilterBar
+          search={<FilterSearch key={kind} value={search} onChange={(v) => f.set({ search: v })} placeholder={kind === 'parent' ? 'Name, mobile, email or child' : 'Name or admission no.'} />}
+          chips={chips}
+          onClear={f.clear}
+          extra={meta ? <ResultCount total={meta.total} noun={kind === 'parent' ? ['parent', 'parents'] : ['student', 'students']} filtered={f.active > 0} /> : undefined}
+        >
+          <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+          <SelectFilter
+            label="Login"
+            name="status"
+            value={status}
+            options={[
+              { value: '', label: `Everyone${meta ? ` (${total})` : ''}` },
+              { value: 'has_login', label: `Has a login${meta ? ` (${(meta.counts.temporary ?? 0) + (meta.counts.active ?? 0) + (meta.counts.locked ?? 0)})` : ''}` },
+              ...STATUSES.map((x) => ({ value: x, label: `${LOGIN_STATUS_LABEL[x]}${meta ? ` (${meta.counts[x]})` : ''}` })),
+            ]}
+            onChange={(v) => f.set({ status: v })}
+            className="sm:w-52"
           />
-          <Select label="Class" value={classId} onChange={(e) => setClassId(e.target.value)}>
-            <option value="">All classes</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Login" value={status} onChange={(e) => setStatus(e.target.value as LoginStatus | '')}>
-            <option value="">Everyone{meta ? ` (${total})` : ''}</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {LOGIN_STATUS_LABEL[s]}
-                {meta ? ` (${meta.counts[s]})` : ''}
-              </option>
-            ))}
-          </Select>
         </FilterBar>
-
         {list.error ? (
           <ErrorState message={list.error} onRetry={list.reload} />
         ) : list.loading && !list.data ? (
@@ -167,7 +162,7 @@ export default function PortalLogins() {
                 ))}
               </tbody>
             </Table>
-            <Pagination page={page} totalPages={meta?.totalPages ?? 1} onChange={setPage} />
+            <Pagination page={f.page} totalPages={meta?.totalPages ?? 1} onChange={f.setPage} />
           </>
         )}
       </Card>

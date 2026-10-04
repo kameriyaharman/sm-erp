@@ -1,34 +1,36 @@
 'use client';
 
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  CircleCheck,
-  CircleDashed,
-  Clock,
-  IndianRupee,
-  LoaderCircle,
-  Minus,
-  Search,
-  TriangleAlert,
-  X,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, CircleCheck, CircleDashed, Clock, IndianRupee, LoaderCircle, Minus, TriangleAlert, X } from 'lucide-react';
 import type { FeesApi, ListStudentsParams, Receipt, StudentFeeList, StudentFeeRow, StudentFeeStatus } from './api';
 import { formatInr, toPaise } from './format';
 import CollectFeeModal from './CollectFeeModal';
-import { buttonClass, controlClass, cx } from '@/components/ui';
+import { buttonClass } from '@/components/ui';
+import {
+  ClassSectionFilter,
+  FilterBar,
+  FilterSearch,
+  FilteredEmpty,
+  SelectFilter,
+  StatusFilter,
+  chip,
+  classSectionChips,
+  describeFilters,
+  useClassOptions,
+  useUrlFilters,
+} from '@/components/filters';
 
 /* ============================================================================
  * Fee collection table
- * Server-paginated list of students with total fee, paid and pending, search,
- * status filter, sorting, and a "Collect fee" action that opens the modal.
+ * Server-paginated list of students with total fee, paid and pending; filters
+ * (search, class, section, status, sort) live in the URL and the server applies
+ * them, so the totals strip always matches the filters. "Collect fee" opens the modal.
  * ========================================================================== */
 
-type StatusFilter = NonNullable<ListStudentsParams['status']>;
+type FeeStatusFilter = NonNullable<ListStudentsParams['status']>;
 type SortKey = NonNullable<ListStudentsParams['sort']>;
 
-const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+const STATUS_FILTERS: { value: FeeStatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'pending', label: 'Pending' },
   { value: 'overdue', label: 'Overdue' },
@@ -70,33 +72,33 @@ const STATUS_TAG: Record<StudentFeeStatus, { label: string; icon: typeof CircleC
 
 const PAGE_SIZE = 20;
 
-function useDebouncedValue<T>(value: T, delay = 300): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-  return debounced;
-}
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'pending', label: 'Highest pending' },
+  { value: 'name', label: 'Student name' },
+  { value: 'admission', label: 'Admission no.' },
+];
+
+/** Filters in the URL: /fees?classId=…&sectionId=…&status=overdue&search=…&sort=name&page=2 */
+const FILTER_DEFAULTS = { search: '', classId: '', sectionId: '', status: 'all', sort: 'pending' };
+const isStatus = (v: string): v is FeeStatusFilter => STATUS_FILTERS.some((o) => o.value === v);
+const isSort = (v: string): v is SortKey => SORT_OPTIONS.some((o) => o.value === v);
 
 interface FeeCollectionTableProps {
   api: FeesApi;
-  /** Optional fixed filters, e.g. from a branch or class picker elsewhere on the page. */
-  baseParams?: Omit<ListStudentsParams, 'search' | 'status' | 'sort' | 'page' | 'limit'>;
-  /** Starting search text and status filter, e.g. from ?search= links elsewhere in the app. */
-  initialSearch?: string;
-  initialStatus?: StatusFilter;
+  /** Optional fixed filters, e.g. from a branch picker elsewhere on the page. */
+  baseParams?: Omit<ListStudentsParams, 'search' | 'status' | 'sort' | 'page' | 'limit' | 'classId' | 'sectionId'>;
+  /** Bump to reload (e.g. after "Add charge" on the page). */
+  refreshKey?: number;
 }
 
-export default function FeeCollectionTable({ api, baseParams, initialSearch = '', initialStatus = 'all' }: FeeCollectionTableProps) {
-  const searchId = useId();
-  const sortId = useId();
-
-  const [search, setSearch] = useState(initialSearch);
-  const debouncedSearch = useDebouncedValue(search.trim());
-  const [status, setStatus] = useState<StatusFilter>(initialStatus);
-  const [sort, setSort] = useState<SortKey>('pending');
-  const [page, setPage] = useState(1);
+export default function FeeCollectionTable({ api, baseParams, refreshKey = 0 }: FeeCollectionTableProps) {
+  const titleId = useId();
+  const f = useUrlFilters(FILTER_DEFAULTS);
+  const cls = useClassOptions();
+  const { search, classId, sectionId } = f.values;
+  const status: FeeStatusFilter = isStatus(f.values.status) ? f.values.status : 'all';
+  const sort: SortKey = isSort(f.values.sort) ? f.values.sort : 'pending';
+  const page = f.page;
 
   const [result, setResult] = useState<StudentFeeList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,9 +108,6 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
   const [collectFor, setCollectFor] = useState<StudentFeeRow | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Any filter change goes back to page 1.
-  useEffect(() => setPage(1), [debouncedSearch, status, sort]);
-
   const baseKey = JSON.stringify(baseParams ?? {});
   useEffect(() => {
     const controller = new AbortController();
@@ -116,7 +115,16 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
     setError(null);
     api
       .listStudents(
-        { ...(JSON.parse(baseKey) as ListStudentsParams), search: debouncedSearch || undefined, status, sort, page, limit: PAGE_SIZE },
+        {
+          ...(JSON.parse(baseKey) as ListStudentsParams),
+          search: search || undefined,
+          classId: classId || undefined,
+          sectionId: sectionId || undefined,
+          status,
+          sort,
+          page,
+          limit: PAGE_SIZE,
+        },
         controller.signal,
       )
       .then((data) => {
@@ -129,7 +137,7 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
         setLoading(false);
       });
     return () => controller.abort();
-  }, [api, baseKey, debouncedSearch, status, sort, page, reloadKey]);
+  }, [api, baseKey, search, classId, sectionId, status, sort, page, reloadKey, refreshKey]);
 
   useEffect(() => {
     if (!toast) return;
@@ -146,91 +154,52 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
   const meta = result?.meta;
   const firstRow = meta && meta.total > 0 ? (meta.page - 1) * meta.limit + 1 : 0;
   const lastRow = meta ? Math.min(meta.page * meta.limit, meta.total) : 0;
-  const hasFilters = debouncedSearch !== '' || status !== 'all';
+
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+    chip('status', 'Status', status, STATUS_FILTERS.find((o) => o.value === status)?.label, () => f.set({ status: 'all' }), status === 'all'),
+  ];
+  const filterText = describeFilters(chips);
 
   return (
-    <section aria-labelledby={`${searchId}-title`} className="rounded-xl border border-line bg-surface">
+    <section aria-labelledby={titleId} className="rounded-xl border border-line bg-surface">
       {/* Header + totals */}
       <div className="flex flex-wrap items-end justify-between gap-6 border-b border-line px-5 py-4">
-        <div>
-          <h2 id={`${searchId}-title`} className="text-[15px] font-semibold text-slate-900 dark:text-white">
+        <div className="min-w-0">
+          <h2 id={titleId} className="text-[15px] font-semibold text-slate-900 dark:text-white">
             Fee ledger
           </h2>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
             {rows[0]?.academicYear ? `Academic year ${rows[0].academicYear.name}. ` : ''}
-            Totals cover every student matching the filters.
+            {filterText ? (
+              <>
+                Totals for <span className="font-medium text-slate-700 dark:text-slate-300">{filterText}</span>.
+              </>
+            ) : (
+              'Totals cover every student.'
+            )}
           </p>
         </div>
-        {meta && <Totals totals={meta.totals} />}
+        {meta && <Totals totals={meta.totals} students={meta.total} />}
       </div>
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-        <div className="relative w-full sm:w-72">
-          <label htmlFor={searchId} className="sr-only">
-            Search students
-          </label>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
-          <input
-            id={searchId}
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name or admission no."
-            className={cx(controlClass, 'h-10 pl-9 pr-8 sm:h-9')}
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-            >
-              <X className="h-4 w-4" aria-hidden />
-            </button>
-          )}
-        </div>
-
-        <div role="radiogroup" aria-label="Filter by payment status" className="inline-flex rounded-[10px] border border-line bg-slate-100/80 p-[3px] dark:bg-white/[0.04]">
-          {STATUS_FILTERS.map((option) => {
-            const active = status === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setStatus(option.value)}
-                className={[
-                  'h-8 rounded-[7px] px-3 text-13 font-medium transition-colors',
-                  active
-                    ? 'bg-surface text-slate-900 shadow-[0_1px_2px_rgb(14_26_51/0.08),0_0_0_1px_rgb(14_26_51/0.04)] dark:bg-white/10 dark:text-white dark:shadow-none'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
-                ].join(' ')}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          {loading && result && <LoaderCircle className="h-4 w-4 animate-spin text-slate-400" aria-label="Updating" />}
-          <label htmlFor={sortId} className="whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
-            Sort by
-          </label>
-          <select
-            id={sortId}
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className={cx(controlClass, 'h-10 w-auto sm:h-9')}
-          >
-            <option value="pending">Highest pending</option>
-            <option value="name">Student name</option>
-            <option value="admission">Admission no.</option>
-          </select>
-        </div>
-      </div>
+      {/* Filters */}
+      <FilterBar
+        bordered={false}
+        search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Name or admission no." />}
+        chips={chips}
+        onClear={f.clear}
+        extra={
+          <div className="flex items-end gap-2">
+            {loading && result && <LoaderCircle className="mb-2.5 h-4 w-4 animate-spin text-slate-400" aria-label="Updating" />}
+            <SelectFilter label="Sort by" name="sort" value={sort} onChange={(v) => f.set({ sort: v })} options={SORT_OPTIONS} />
+          </div>
+        }
+      >
+        <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+        <StatusFilter label="Status" name="status" value={status} onChange={(v) => f.set({ status: v })} options={STATUS_FILTERS} />
+      </FilterBar>
 
       {/* Table */}
       <div className="relative overflow-x-auto">
@@ -270,19 +239,11 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
 
             {!error && result && rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-14 text-center">
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">No students match these filters</p>
-                  {hasFilters && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearch('');
-                        setStatus('all');
-                      }}
-                      className="mt-2 text-sm font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-                    >
-                      Clear filters
-                    </button>
+                <td colSpan={7}>
+                  {chips.some(Boolean) ? (
+                    <FilteredEmpty what="students" chips={chips} onClear={f.clear} />
+                  ) : (
+                    <p className="px-5 py-14 text-center text-sm font-medium text-slate-900 dark:text-slate-100">No students with fees yet</p>
                   )}
                 </td>
               </tr>
@@ -303,13 +264,13 @@ export default function FeeCollectionTable({ api, baseParams, initialSearch = ''
             Showing {firstRow}–{lastRow} of {meta.total.toLocaleString('en-IN')} students
           </p>
           <div className="flex items-center gap-1">
-            <PageButton label="Previous page" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+            <PageButton label="Previous page" disabled={page <= 1 || loading} onClick={() => f.setPage(page - 1)}>
               <ChevronLeft className="h-4 w-4" aria-hidden />
             </PageButton>
             <span className="px-2 tabular-nums">
               Page {meta.page} of {Math.max(meta.totalPages, 1)}
             </span>
-            <PageButton label="Next page" disabled={page >= meta.totalPages || loading} onClick={() => setPage((p) => p + 1)}>
+            <PageButton label="Next page" disabled={page >= meta.totalPages || loading} onClick={() => f.setPage(page + 1)}>
               <ChevronRight className="h-4 w-4" aria-hidden />
             </PageButton>
           </div>
@@ -396,12 +357,16 @@ function StudentRow({ row, onCollect }: { row: StudentFeeRow; onCollect: () => v
   );
 }
 
-function Totals({ totals }: { totals: StudentFeeList['meta']['totals'] }) {
+function Totals({ totals, students }: { totals: StudentFeeList['meta']['totals']; students: number }) {
   const total = toPaise(totals.totalFee);
   const paid = toPaise(totals.paid);
   const share = total > 0 ? (paid / total) * 100 : 0;
   return (
-    <dl className="flex flex-wrap items-end gap-x-8 gap-y-3">
+    <dl className="flex flex-wrap items-end gap-x-8 gap-y-3" data-fee-totals>
+      <div>
+        <dt className="text-13 text-slate-500 dark:text-slate-400">Students</dt>
+        <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50" data-total="students">{students.toLocaleString('en-IN')}</dd>
+      </div>
       <div>
         <dt className="text-13 text-slate-500 dark:text-slate-400">Total fee</dt>
         <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50">{formatInr(totals.totalFee)}</dd>
@@ -415,7 +380,7 @@ function Totals({ totals }: { totals: StudentFeeList['meta']['totals'] }) {
       </div>
       <div>
         <dt className="text-13 text-slate-500 dark:text-slate-400">Pending</dt>
-        <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50">{formatInr(totals.pending)}</dd>
+        <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50" data-total="pending">{formatInr(totals.pending)}</dd>
       </div>
     </dl>
   );

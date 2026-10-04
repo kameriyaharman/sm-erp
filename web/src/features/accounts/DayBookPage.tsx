@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeftRight, Minus, Plus } from 'lucide-react';
 import { Button, Page, PageHeader, Tabs } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
@@ -9,14 +9,16 @@ import { currentUser } from '@/lib/session';
 import { formatDate, formatInr } from '@/lib/format';
 import { errorText, todayLocal, useFlash } from '@/features/admin/shared';
 import DayView, { PrintDayBook } from './DayView';
+import EntriesView from './EntriesView';
 import { AccountModal, DeleteEntryModal, EntryModal, TransferModal } from './EntryModals';
 import { AccountsView, PrintRange, RangeView, SummaryView } from './OtherViews';
 import type { Account, AccountsResponse, DayBook, DayBookRange, LedgerEntry, MonthSummary } from './types';
 import { downloadFile, monthStart } from './util';
 
-type Tab = 'day' | 'range' | 'summary' | 'accounts';
+type Tab = 'day' | 'entries' | 'range' | 'summary' | 'accounts';
 const TABS: Array<{ value: Tab; label: string }> = [
   { value: 'day', label: 'Day book' },
+  { value: 'entries', label: 'All entries' },
   { value: 'range', label: 'Date range' },
   { value: 'summary', label: 'Month summary' },
   { value: 'accounts', label: 'Accounts' },
@@ -25,9 +27,12 @@ const isDate = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.t
 
 export default function DayBookPage() {
   const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const flash = useFlash();
-  const initialTab = (TABS.some((t) => t.value === params.get('tab')) ? params.get('tab') : 'day') as Tab;
-  const [tab, setTab] = useState<Tab>(initialTab);
+  // The tab is in the URL (?tab=entries) so Back and shared links land on it.
+  const tab = (TABS.some((t) => t.value === params.get('tab')) ? params.get('tab') : 'day') as Tab;
+  const setTab = (t: Tab) => router.replace(t === 'day' ? pathname : `${pathname}?tab=${t}`, { scroll: false });
   const [date, setDate] = useState(isDate(params.get('date')) ? params.get('date')! : todayLocal());
   const [accountId, setAccountId] = useState(params.get('account') ?? '');
   const [from, setFrom] = useState(monthStart(todayLocal()));
@@ -135,6 +140,7 @@ export default function DayBookPage() {
               exporting={exporting}
             />
           )}
+          {tab === 'entries' && <EntriesView accounts={accounts} today={today} onError={(text) => flash.show('error', text)} />}
           {tab === 'range' && (
             <RangeView
               from={from}

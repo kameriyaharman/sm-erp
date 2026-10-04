@@ -74,6 +74,7 @@ function mapEntry(e, extra = {}) {
       paymentOrderId: e.payment_order_id,
       reversesEntryId: e.reverses_entry_id,
     },
+    student: e.student_id ? { id: e.student_id, name: e.student_name, admissionNumber: e.admission_number, classLabel: e.student_class_label } : null,
     canDelete: !FEE_SOURCES.has(e.source) && !e.deleted_at,
     createdBy: e.created_by_name ? { name: e.created_by_name } : null,
     ...(e.deleted_at && { deleted: { at: e.deleted_at, by: e.deleted_by_name, reason: e.delete_reason } }),
@@ -296,6 +297,33 @@ export async function listLedger(auth, { branchId, ...filters }) {
     data: rows.map((r) => mapEntry(r)),
     meta: pageMeta(filters, totals.n, { totalIn: totals.total_in, totalOut: totals.total_out, branch: mapBranch(ctx) }),
   };
+}
+
+/** CSV of the entries list with the same filters as GET /ledger (no running balance: rows can be filtered). */
+export async function exportLedgerCsv(auth, { branchId, ...filters }) {
+  const { ctx } = await branchContext(auth, branchId);
+  if (filters.accountId) await loadAccountInBranch(pool, auth, filters.accountId, ctx.id);
+  const rows = await repo.ledgerRows(pool, { ...filters, branchId: ctx.id });
+  const lines = [['Date', 'Voucher No', 'Account', 'Category', 'Particulars', 'Party', 'Student', 'Class', 'Payment Mode', 'Reference', 'In', 'Out', 'Deleted']];
+  let totalIn = 0;
+  let totalOut = 0;
+  for (const r of rows) {
+    const amt = toPaise(r.amount);
+    const isIn = r.direction === 'in';
+    if (!r.deleted_at) {
+      if (isIn) totalIn += amt;
+      else totalOut += amt;
+    }
+    lines.push([
+      r.entry_date, r.voucher_no ?? '', r.account_name, CATEGORY_LABEL(r.category), r.description, r.party ?? '',
+      r.student_id ? r.student_name : '', r.student_class_label ?? '', CATEGORY_LABEL(r.payment_mode), r.reference ?? '',
+      isIn ? plainRupees(amt) : '', isIn ? '' : plainRupees(amt), r.deleted_at ? `Deleted: ${r.delete_reason ?? ''}` : '',
+    ]);
+  }
+  lines.push(['', '', '', '', `Total (${rows.length} entries)`, '', '', '', '', '', plainRupees(totalIn), plainRupees(totalOut), '']);
+  const code = String(ctx.code).toLowerCase().replace(/[^a-z0-9-]/g, '');
+  const period = filters.from || filters.to ? `-${filters.from ?? 'start'}-to-${filters.to ?? 'today'}` : '';
+  return { filename: `entries-${code}${period}.csv`, body: `\uFEFF${toCsv(lines)}` };
 }
 
 const CATEGORY_LABEL = (c) => c.replace(/_/g, ' ').replace(/\b\w/g, (x) => x.toUpperCase());

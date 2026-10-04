@@ -58,12 +58,12 @@ export async function runFeeReminders(req, res) {
   if (!env.PARENT_PORTAL_URL) {
     throw new AppError(503, 'NOT_CONFIGURED', 'Set PARENT_PORTAL_URL so reminders can include a payment link');
   }
-  const { daysAhead, includeOverdue, tenantId, branchId, dryRun } = req.valid.body;
+  const { daysAhead, includeOverdue, tenantId, branchId, classId, sectionId, dryRun } = req.valid.body;
   const scope = await scopeFor(req.auth, { tenantId, branchId });
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
   if (dryRun) {
-    const rows = await findDueFeesForReminders({ tenantId: scope.tenantId, branchIds: scope.branchIds, daysAhead, includeOverdue, today });
+    const rows = await findDueFeesForReminders({ tenantId: scope.tenantId, branchIds: scope.branchIds, daysAhead, includeOverdue, today, classId, sectionId });
     res.json({
       data: {
         dryRun: true,
@@ -88,6 +88,8 @@ export async function runFeeReminders(req, res) {
     branchIds: scope.branchIds,
     daysAhead,
     includeOverdue,
+    classId,
+    sectionId,
     today,
     createdBy: req.auth.userId,
     batchId,

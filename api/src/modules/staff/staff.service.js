@@ -27,8 +27,11 @@ function mapStaff(r) {
   };
 }
 
-export async function listStaff(auth, { branchId }) {
-  return (await repo.listStaff(await staffScope(auth, { branchId }))).map(mapStaff);
+/** { data, meta: { total (matching the filters), counts: { active, teachers, total } (whole scope) } } */
+export async function listStaff(auth, { branchId, ...filters }) {
+  const scope = await staffScope(auth, { branchId });
+  const [rows, counts] = await Promise.all([repo.listStaff(scope, filters), repo.staffCounts(scope)]);
+  return { data: rows.map(mapStaff), meta: { total: rows.length, counts } };
 }
 
 export async function createStaff(auth, input) {

@@ -34,11 +34,14 @@ const STATUS_SQL = (u) => `CASE WHEN ${u}.status <> 'active' THEN 'inactive'
                               WHEN ${u}.must_change_password THEN 'temporary'
                               ELSE 'active' END`;
 
+/** ?status=: one login status, or has_login = can sign in now or soon (temporary, active, locked). */
+const STATUS_MATCH = `($6::text IS NULL OR st = $6 OR ($6 = 'has_login' AND st IN ('temporary', 'active', 'locked')))`;
+
 /** One row whatever the filters: status counts over `base`, the filtered total, and one page of rows (json). */
 const PAGE_SQL = (orderBy) => `
   SELECT (SELECT json_object_agg(st, n) FROM (SELECT st, count(*) AS n FROM base GROUP BY st) x) AS counts,
-         (SELECT count(*)::int FROM base WHERE $6::text IS NULL OR st = $6) AS total,
-         COALESCE((SELECT json_agg(p) FROM (SELECT * FROM base WHERE $6::text IS NULL OR st = $6 ${orderBy} LIMIT $7 OFFSET $8) p), '[]'::json) AS rows`;
+         (SELECT count(*)::int FROM base WHERE ${STATUS_MATCH}) AS total,
+         COALESCE((SELECT json_agg(p) FROM (SELECT * FROM base WHERE ${STATUS_MATCH} ${orderBy} LIMIT $7 OFFSET $8) p), '[]'::json) AS rows`;
 
 const escapeLike = (s) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
 

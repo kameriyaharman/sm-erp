@@ -4,21 +4,28 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { FileBadge, FileDown, FilePlus2 } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Td, Th } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Th } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { apiSend, openPdf } from '@/lib/session';
-import { formatDateTime, titleCase } from '@/lib/format';
-import { FilterBar, StudentPicker, errorText, useFlash } from '../shared';
+import { formatDateTime, titleCase, todayIso } from '@/lib/format';
+import { ClassSectionFilter, DateRangeFilter, FilterBar, FilterSearch, FilteredEmpty, ResultCount, SelectFilter, chip, classSectionChips, describeRange, useClassOptions, useUrlFilters } from '@/components/filters';
+import { StudentPicker, errorText, useFlash } from '../shared';
 import { BonafideModal, TcModal, type CertStudent } from './IssueModals';
 import type { CertificateRow, CertificateType, Wrapped } from '../types';
 
 const TYPE_LABEL: Record<CertificateType, string> = { bonafide: 'Bonafide', transfer_certificate: 'Transfer certificate' };
 
+/** /certificates?type=…&status=…&classId=…&sectionId=…&from=…&to=…&search=… */
+const FILTERS = { search: '', type: '', status: '', classId: '', sectionId: '', from: '', to: '' };
+type CertPage = { data: CertificateRow[]; meta?: { page: number; limit: number; total: number; totalPages: number } };
+
 export default function CertificatesPage() {
   const params = useSearchParams();
   const flash = useFlash();
-  const [type, setType] = useState<'' | CertificateType>('');
-  const { data, error, loading, reload } = useApi<Wrapped<CertificateRow[]>>(`/documents/certificates${qs({ type, limit: 200 })}`);
+  const f = useUrlFilters(FILTERS);
+  const { search, type, status, classId, sectionId, from, to } = f.values;
+  const cls = useClassOptions();
+  const { data, error, loading, reload } = useApi<CertPage>(`/documents/certificates${qs({ search, type, status, classId, sectionId, from, to, page: f.page, limit: 50 })}`);
   const [picking, setPicking] = useState(false);
   const [student, setStudent] = useState<CertStudent | null>(null);
   const [issueType, setIssueType] = useState<CertificateType>('bonafide');
@@ -43,6 +50,13 @@ export default function CertificatesPage() {
   }
 
   const rows = data?.data ?? [];
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('type', 'Type', type, TYPE_LABEL[type as CertificateType], () => f.set({ type: '' })),
+    chip('status', 'Status', status, titleCase(status), () => f.set({ status: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+    (from || to) && { key: 'date', label: `Issued: ${describeRange(from, to, todayIso())}`, onRemove: () => f.set({ from: '', to: '' }) },
+  ];
 
   return (
     <Page wide>
@@ -57,18 +71,44 @@ export default function CertificatesPage() {
       />
       {flash.node}
       <Card padded={false}>
-        <FilterBar>
-          <Select label="Type" value={type} onChange={(e) => setType(e.target.value as typeof type)}>
-            <option value="">All certificates</option>
-            <option value="bonafide">Bonafide</option>
-            <option value="transfer_certificate">Transfer certificates</option>
-          </Select>
-          {data && <p className="pb-2 text-sm text-slate-500 dark:text-slate-400">{rows.length} issued</p>}
+        <FilterBar
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Student, admission or certificate no." />}
+          chips={chips}
+          onClear={f.clear}
+          extra={data?.meta ? <ResultCount total={data.meta.total} noun={['certificate', 'certificates']} filtered={f.active > 0} /> : undefined}
+        >
+          <SelectFilter
+            label="Type"
+            name="type"
+            value={type}
+            allLabel="All certificates"
+            options={[
+              { value: 'bonafide', label: 'Bonafide' },
+              { value: 'transfer_certificate', label: 'Transfer certificates' },
+            ]}
+            onChange={(v) => f.set({ type: v })}
+          />
+          <SelectFilter
+            label="Status"
+            name="status"
+            value={status}
+            allLabel="Any status"
+            options={[
+              { value: 'issued', label: 'Issued' },
+              { value: 'cancelled', label: 'Cancelled' },
+            ]}
+            onChange={(v) => f.set({ status: v })}
+            className="sm:w-36"
+          />
+          <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+          <DateRangeFilter label="Issued" from={from} to={to} today={todayIso()} max={todayIso()} onChange={(r) => f.set(r)} />
         </FilterBar>
         {loading && !data ? (
           <Spinner label="Loading register…" />
         ) : error ? (
           <ErrorState message={error} onRetry={reload} />
+        ) : rows.length === 0 && f.active > 0 ? (
+          <FilteredEmpty what="certificates" chips={chips} onClear={f.clear} icon={<FileBadge className="h-7 w-7" aria-hidden />} />
         ) : rows.length === 0 ? (
           <EmptyState icon={<FileBadge className="h-7 w-7" aria-hidden />} title="No certificates issued" description="Issue a bonafide or transfer certificate for a student." action={<Button onClick={() => setPicking(true)}>Issue certificate</Button>} />
         ) : (
@@ -122,6 +162,7 @@ export default function CertificatesPage() {
             </tbody>
           </Table>
         )}
+        {data?.meta && <Pagination page={f.page} totalPages={data.meta.totalPages} onChange={f.setPage} />}
       </Card>
 
       <Modal open={picking} onClose={() => setPicking(false)} title="Issue a certificate">

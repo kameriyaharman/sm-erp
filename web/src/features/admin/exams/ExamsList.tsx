@@ -5,11 +5,12 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronRight, Plus } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Td, Th } from '@/components/ui';
-import { useApi } from '@/lib/useApi';
+import { qs, useApi } from '@/lib/useApi';
+import { ClassSectionFilter, FilterBar, FilterSearch, FilteredEmpty, ResultCount, SelectFilter, chip, classSectionChips, useClassOptions, useUrlFilters } from '@/components/filters';
 import { apiSend } from '@/lib/session';
 import { formatDate, titleCase } from '@/lib/format';
 import { ProgressBar, errorText, fieldErrors, useFlash } from '../shared';
-import { COMPONENT_CODES, EXAM_TYPES, type Exam, type Term, type Wrapped } from '../types';
+import { COMPONENT_CODES, EXAM_STATUSES, EXAM_TYPES, type Exam, type Term, type Wrapped } from '../types';
 import { ExamStatusBadge } from './ExamStatusBadge';
 
 const COMPONENT_LABEL: Record<string, string> = {
@@ -21,12 +22,27 @@ const COMPONENT_LABEL: Record<string, string> = {
   TERM: 'Term exam',
 };
 
+/** /exams?search=…&termId=…&status=…&examType=…&classId=… */
+const FILTERS = { search: '', termId: '', status: '', examType: '', classId: '' };
+const STATUS_LABEL = (s: string) => (s === 'results_published' ? 'Results out' : titleCase(s));
+
 export default function ExamsList() {
   const router = useRouter();
-  const { data, error, loading, reload } = useApi<Wrapped<Exam[]>>('/exams');
+  const f = useUrlFilters(FILTERS);
+  const { search, termId, status, examType, classId } = f.values;
+  const cls = useClassOptions();
+  const terms = useApi<Wrapped<Term[]>>('/school/terms');
+  const { data, error, loading, reload } = useApi<Wrapped<Exam[]>>(`/exams${qs({ search, termId, status, examType, classId })}`);
   const flash = useFlash();
   const [creating, setCreating] = useState(false);
   const exams = data?.data ?? [];
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('termId', 'Term', termId, terms.data?.data.find((t) => t.id === termId)?.name, () => f.set({ termId: '' })),
+    chip('status', 'Status', status, STATUS_LABEL(status), () => f.set({ status: '' })),
+    chip('examType', 'Type', examType, titleCase(examType), () => f.set({ examType: '' })),
+    ...classSectionChips(cls, { classId }, f.set),
+  ];
 
   return (
     <Page wide>
@@ -41,10 +57,23 @@ export default function ExamsList() {
       />
       {flash.node}
       <Card padded={false}>
+        <FilterBar
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Exam name" />}
+          chips={chips}
+          onClear={f.clear}
+          extra={data ? <ResultCount total={exams.length} noun={['exam', 'exams']} filtered={f.active > 0} /> : undefined}
+        >
+          <SelectFilter label="Term" name="termId" value={termId} allLabel="All terms" options={(terms.data?.data ?? []).map((t) => ({ value: t.id, label: t.name }))} onChange={(v) => f.set({ termId: v })} />
+          <SelectFilter label="Status" name="status" value={status} allLabel="Any status" options={EXAM_STATUSES.map((x) => ({ value: x, label: STATUS_LABEL(x) }))} onChange={(v) => f.set({ status: v })} />
+          <SelectFilter label="Type" name="examType" value={examType} allLabel="All types" options={EXAM_TYPES.map((x) => ({ value: x, label: titleCase(x) }))} onChange={(v) => f.set({ examType: v })} />
+          <ClassSectionFilter options={cls} classId={classId} sectionId="" showSection={false} onChange={(p) => f.set({ classId: p.classId })} />
+        </FilterBar>
         {loading && !data ? (
           <Spinner label="Loading exams…" />
         ) : error ? (
           <ErrorState message={error} onRetry={reload} />
+        ) : exams.length === 0 && f.active > 0 ? (
+          <FilteredEmpty what="exams" chips={chips} onClear={f.clear} />
         ) : exams.length === 0 ? (
           <EmptyState title="No exams this year" description="Create the first exam, then add papers for each class." action={<Button onClick={() => setCreating(true)}>New exam</Button>} />
         ) : (

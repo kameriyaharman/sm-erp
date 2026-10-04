@@ -11,6 +11,8 @@ export const listQuery = z
     from: isoDate.optional(),
     to: isoDate.optional(),
     category: z.enum(CATEGORIES).optional(),
+    paymentMode: z.enum(PAYMENT_MODES).optional(),
+    search: z.string().trim().min(1).max(100).optional(),   // description, vendor, reference, voucher no.
     branchId: uuid.optional(),
     page,
     limit: limit(25, 100),
@@ -35,5 +37,11 @@ export const createBody = z
 export const deleteBody = z.object({ reason: optionalText(255) }).strict();
 
 export const monthlyQuery = z
-  .object({ months: z.coerce.number().int().min(1).max(24).default(12), branchId: uuid.optional() })
+  .object({
+    months: z.coerce.number().int().min(1).max(24).default(12),
+    category: z.enum(CATEGORIES).optional(),
+    paymentMode: z.enum(PAYMENT_MODES).optional(),
+    search: z.string().trim().min(1).max(100).optional(),
+    branchId: uuid.optional(),
+  })
   .strict();

@@ -13,6 +13,8 @@ export const listQuery = z
     sectionId: uuid.optional(),
     branchId: uuid.optional(),
     status: z.enum(['active', 'left', 'all']).default('active'),
+    gender: z.enum(['male', 'female', 'other']).optional(),
+    transport: z.enum(['yes', 'no']).optional(),      // uses school transport (has a route) or not
     page,
     limit: limit(25, 100),
     sort: z.enum(['name', 'admission', 'class']).default('name'),

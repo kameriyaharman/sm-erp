@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { ClassSectionFilter, DateRangeFilter, FilterBar, FilterSearch, FilteredEmpty, ResultCount, SelectFilter, ToggleFilter, chip, classSectionChips, describeRange, useClassOptions, useUrlFilters } from '@/components/filters';
 import { useSearchParams } from 'next/navigation';
 import { Megaphone, Pin, Plus, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Select, Spinner, Textarea } from '@/components/ui';
-import { useApi } from '@/lib/useApi';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Pagination, Select, Spinner, Textarea } from '@/components/ui';
+import { qs, useApi } from '@/lib/useApi';
 import { apiSend } from '@/lib/session';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, todayIso } from '@/lib/format';
 import { ConfirmModal, errorText, fieldErrors, isAdminRole, useFlash, useRole } from './shared';
 import type { Audience, ClassInfo, NoticeCreated, NoticeItem, Wrapped } from './types';
 
@@ -16,13 +17,20 @@ const AUDIENCE: Record<Audience, { label: string; tone: 'indigo' | 'green' | 'am
   teachers: { label: 'Teachers', tone: 'amber' },
 };
 
+/** /notices?search=…&audience=parents&classId=…&pinned=true&from=…&to=… */
+const FILTERS = { search: '', audience: '', classId: '', pinned: '', from: '', to: '' };
+
 export default function NoticesPage() {
   const role = useRole();
   const admin = isAdminRole(role);
   const params = useSearchParams();
-  const { data, error, loading, reload } = useApi<Wrapped<NoticeItem[]>>('/notices?limit=100');
+  const f = useUrlFilters(FILTERS);
+  const { search, audience, classId, pinned, from, to } = f.values;
+  const cls = useClassOptions(admin);
+  const { data, error, loading, reload } = useApi<{ data: NoticeItem[]; meta?: { page: number; totalPages: number; total: number } }>(
+    `/notices${qs({ search, audience, classId: admin ? classId : '', pinned, from, to, page: f.page, limit: 30 })}`,
+  );
   const flash = useFlash();
-  const [filter, setFilter] = useState<'' | Audience>('');
   const [composing, setComposing] = useState(false);
   const [deleting, setDeleting] = useState<NoticeItem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -32,10 +40,25 @@ export default function NoticesPage() {
     if (admin && params.get('new') === '1') setComposing(true);
   }, [admin, params]);
 
-  const list = useMemo(() => {
-    const rows = (data?.data ?? []).filter((n) => !filter || n.audience === filter);
-    return [...rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt.localeCompare(a.createdAt));
-  }, [data, filter]);
+  // The server filters and orders (pinned first, newest first).
+  const list = data?.data ?? [];
+  const audiences: Array<{ value: Audience; label: string }> = admin
+    ? [
+        { value: 'all', label: 'For everyone' },
+        { value: 'parents', label: 'For parents' },
+        { value: 'teachers', label: 'For teachers' },
+      ]
+    : [
+        { value: 'all', label: 'For everyone' },
+        { value: 'teachers', label: 'For teachers' },
+      ];
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('audience', 'For', audience, AUDIENCE[audience as Audience]?.label, () => f.set({ audience: '' })),
+    ...(admin ? classSectionChips(cls, { classId }, f.set) : []),
+    pinned === 'true' && { key: 'pinned', label: 'Pinned only', onRemove: () => f.set({ pinned: '' }) },
+    (from || to) && { key: 'date', label: `Posted: ${describeRange(from, to, todayIso())}`, onRemove: () => f.set({ from: '', to: '' }) },
+  ];
 
   async function doDelete() {
     if (!deleting) return;
@@ -60,14 +83,6 @@ export default function NoticesPage() {
         description={admin ? 'Announcements for parents and staff' : 'Announcements from the school office'}
         actions={
           <>
-            <div className="w-44">
-            <Select aria-label="Filter by audience" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
-              <option value="">All notices</option>
-              <option value="all">For everyone</option>
-              <option value="parents">For parents</option>
-              <option value="teachers">For teachers</option>
-            </Select>
-            </div>
             {admin && (
               <Button icon={<Plus className="h-4 w-4" aria-hidden />} onClick={() => setComposing(true)}>
                 Post notice
@@ -77,10 +92,28 @@ export default function NoticesPage() {
         }
       />
       {flash.node}
+      <Card padded={false} className="mb-4">
+        <FilterBar
+          bordered={false}
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Title or text" />}
+          chips={chips}
+          onClear={f.clear}
+          extra={data?.meta ? <ResultCount total={data.meta.total} noun={['notice', 'notices']} filtered={f.active > 0} /> : undefined}
+        >
+          <SelectFilter label="Audience" name="audience" value={audience} allLabel="All notices" options={audiences} onChange={(v) => f.set({ audience: v })} />
+          {admin && <ClassSectionFilter options={cls} classId={classId} sectionId="" showSection={false} allClassesLabel="Any class" onChange={(p) => f.set({ classId: p.classId })} />}
+          <DateRangeFilter label="Posted" from={from} to={to} today={todayIso()} max={todayIso()} onChange={(r) => f.set(r)} />
+          <ToggleFilter label="Pinned only" name="pinned" checked={pinned === 'true'} onChange={(on) => f.set({ pinned: on ? 'true' : '' })} />
+        </FilterBar>
+      </Card>
       {loading && !data ? (
         <Spinner label="Loading notices…" />
       ) : error ? (
         <ErrorState message={error} onRetry={reload} />
+      ) : list.length === 0 && f.active > 0 ? (
+        <Card>
+          <FilteredEmpty what="notices" chips={chips} onClear={f.clear} icon={<Megaphone className="h-7 w-7" aria-hidden />} />
+        </Card>
       ) : list.length === 0 ? (
         <Card>
           <EmptyState icon={<Megaphone className="h-7 w-7" aria-hidden />} title="No notices yet" description={admin ? 'Post a notice and parents see it in their app.' : 'Notices from the office will appear here.'} action={admin && <Button onClick={() => setComposing(true)}>Post notice</Button>} />
@@ -126,6 +159,11 @@ export default function NoticesPage() {
             </li>
           ))}
         </ul>
+      )}
+      {data?.meta && data.meta.totalPages > 1 && (
+        <Card padded={false} className="mt-4">
+          <Pagination page={f.page} totalPages={data.meta.totalPages} onChange={f.setPage} />
+        </Card>
       )}
 
       {admin && (

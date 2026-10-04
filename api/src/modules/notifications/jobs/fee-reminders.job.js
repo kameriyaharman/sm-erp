@@ -14,7 +14,7 @@ import { pool } from '../../../db/pool.js';
  * Idempotent per day: the dedupe key fee_due:<student>:<parent>:<date> means a
  * second run on the same day (cron overlap, manual re-run) sends nothing new.
  */
-export async function findDueFeesForReminders({ tenantId, branchIds, daysAhead, includeOverdue, today }) {
+export async function findDueFeesForReminders({ tenantId, branchIds, daysAhead, includeOverdue, today, classId = null, sectionId = null }) {
   const { rows } = await pool.query(
     `WITH due AS (
        SELECT i.tenant_id, i.branch_id, i.student_id,
@@ -38,6 +38,7 @@ export async function findDueFeesForReminders({ tenantId, branchIds, daysAhead, 
             pu.id AS parent_user_id, concat_ws(' ', pu.first_name, pu.last_name) AS parent_name, pu.phone
        FROM due d
        JOIN student_profiles sp ON sp.id = d.student_id AND sp.deleted_at IS NULL
+                               AND ($6::uuid IS NULL OR sp.class_id = $6) AND ($7::uuid IS NULL OR sp.section_id = $7)
        JOIN users su            ON su.id = sp.user_id
        JOIN branches b          ON b.id = d.branch_id
        JOIN tenants t           ON t.id = d.tenant_id AND t.status = 'active'
@@ -47,7 +48,7 @@ export async function findDueFeesForReminders({ tenantId, branchIds, daysAhead, 
              OR pu.id IN (SELECT g.guardian_user_id FROM student_guardians g
                            WHERE g.student_id = sp.id AND g.receives_notices))
       ORDER BY d.due_date, d.student_id`,
-    [tenantId ?? null, branchIds ?? null, today, daysAhead, includeOverdue],
+    [tenantId ?? null, branchIds ?? null, today, daysAhead, includeOverdue, classId ?? null, sectionId ?? null],
   );
   return rows;
 }
@@ -60,6 +61,8 @@ export async function findDueFeesForReminders({ tenantId, branchIds, daysAhead, 
  * @param {string[]} [options.branchIds]
  * @param {number} [options.daysAhead]        remind this many days before the due date
  * @param {boolean} [options.includeOverdue]
+ * @param {string} [options.classId]          only students of this class
+ * @param {string} [options.sectionId]        only students of this section
  * @param {string} [options.today]            YYYY-MM-DD (defaults to today, Asia/Kolkata)
  * @param {string} [options.createdBy]
  * @param {string} [options.batchId]
@@ -71,6 +74,8 @@ export async function runFeeDueReminders({
   branchIds,
   daysAhead = 3,
   includeOverdue = true,
+  classId = null,
+  sectionId = null,
   today = todayInIndia(),
   createdBy,
   batchId = randomUUID(),
@@ -79,7 +84,7 @@ export async function runFeeDueReminders({
   const summary = { batchId, date: today, students: 0, reminders: 0, sent: 0, failed: 0, alreadySent: 0, noPhone: 0, failures: [] };
   let rows;
   try {
-    rows = await findDueFeesForReminders({ tenantId, branchIds, daysAhead, includeOverdue, today });
+    rows = await findDueFeesForReminders({ tenantId, branchIds, daysAhead, includeOverdue, today, classId, sectionId });
   } catch (err) {
     logger.error('Fee reminder run could not read dues', { batchId, error: err.message });
     return { ...summary, error: { code: 'QUERY_FAILED', message: err.message } };

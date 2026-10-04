@@ -144,6 +144,8 @@ class-teacher sections + sections where they teach at least one subject.
 | Expenses | Yes (tenant) | Yes (branch) | No | No | No | No |
 | Fee setup: fee heads, class-wise structure, copy, apply to students (`/fees/heads`, `/fees/structure*`) | Yes (tenant; `?branchId=` / head office) | Yes (branch) | No | No | No | No |
 | Per-student fee concession (`/students/:id/fee-concession`) | Yes (tenant) | Yes (branch) | No | No | No | No |
+| One-off charges to a student or a class / section (`POST /fees/charges`) | Yes (tenant) | Yes (branch: own students / classes, others 404) | No | No | No | No |
+| All transport riders, filtered (`GET /transport/riders`) | Yes (tenant) | Yes (branch) | No | No | No | No |
 | Day book, accounts, ledger, transfers, CSV export, month summary (`/accounts*`, `/daybook*`, `/ledger*`) | Yes (tenant; `?branchId=` / head office) | Yes (branch) | No | No | No | No |
 
 ### Parent app `/parent`

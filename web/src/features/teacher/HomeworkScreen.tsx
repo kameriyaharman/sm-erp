@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { BookOpenCheck, Paperclip, Plus, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Modal, Notice, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Textarea, Th, cx } from '@/components/ui';
+import { ClassSectionFilter, DateRangeFilter, FilterBar, FilterSearch, FilteredEmpty, ResultCount, SelectFilter, chip, classSectionChips, describeRange, useClassOptions, useUrlFilters } from '@/components/filters';
 import { AttachmentChip } from '@/components/Attachments';
 import { qs, useApi } from '@/lib/useApi';
 import { ApiError, apiSend } from '@/lib/session';
@@ -13,7 +14,6 @@ import { EditAttachmentsModal, FileDropZone, PendingFileList, RejectedFiles, use
 import type { HomeworkRow, PageMeta, SectionChoice, Subject } from './types';
 
 const PAGE_SIZE = 20;
-const ALL = '';
 const NO_SUBJECTS = "You haven't been assigned any subjects yet. Ask the school office to assign your classes.";
 
 function dueBadge(due: string) {
@@ -26,20 +26,20 @@ function dueBadge(due: string) {
 /** Subjects offered when setting homework for a section: a teacher's own subjects there; admins any (or none). */
 type SubjectOptions = (sectionId: string) => { options: Array<{ id: string; name: string }>; required: boolean };
 
+/** /homework?classId=…&sectionId=…&subjectId=…&from=…&to=…&dateField=due&search=… (teachers: their classes only). */
+const FILTERS = { search: '', classId: '', sectionId: '', subjectId: '', from: '', to: '', dateField: 'assigned' };
+
 export default function HomeworkScreen() {
-  const { sections, defaultId, error: secError, reload: reloadSections, isTeacher, scope, subjectsFor } = useSections();
+  const { sections, error: secError, reload: reloadSections, isTeacher, scope, subjectsFor } = useSections();
   const subjects = useApi<{ data: Subject[] }>('/school/subjects');
-  const [sectionId, setSectionId] = useState<string | null>(null);
-  const [subjectId, setSubjectId] = useState(ALL);
-  const [page, setPage] = useState(1);
+  const cls = useClassOptions();
+  const f = useUrlFilters(FILTERS, { ignoreInCount: ['dateField'] });
+  const { search, classId, sectionId, subjectId, from, to } = f.values;
+  const dateField = f.values.dateField === 'due' ? 'due' : 'assigned';
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<HomeworkRow | null>(null);
   const [filesFor, setFilesFor] = useState<HomeworkRow | null>(null);
   const [flash, setFlash] = useState<{ tone: 'success' | 'warn'; text: string } | null>(null);
-
-  useEffect(() => {
-    if (sectionId === null && sections) setSectionId(defaultId);
-  }, [sections, defaultId, sectionId]);
 
   // Sections the user may set homework for: teachers only where they teach a subject.
   const settable = useMemo(() => (sections ?? []).filter((s) => !isTeacher || (subjectsFor(s.id)?.length ?? 0) > 0), [sections, isTeacher, subjectsFor]);
@@ -49,13 +49,27 @@ export default function HomeworkScreen() {
     if (mine) return { options: mine, required: true };
     return { options: subjects.data?.data ?? [], required: false };
   };
+  // Subject filter: teachers see the subjects they teach (in the chosen section, or anywhere).
+  const subjectChoices = useMemo(() => {
+    if (!isTeacher || !scope) return subjects.data?.data ?? [];
+    const ids = new Map<string, string>();
+    for (const [sec, list] of scope.subjectsBySection) if (!sectionId || sec === sectionId) for (const x of list) ids.set(x.id, x.name);
+    // A class teacher also sees homework of other subjects in their class.
+    const all = subjects.data?.data ?? [];
+    return scope.isClassTeacher ? all : all.filter((x) => ids.has(x.id));
+  }, [isTeacher, scope, subjects.data, sectionId]);
 
-  // The API filters by section only; a subject filter looks at the latest 100 items of the section.
-  // Teachers asking for "All classes" get their own sections (the server scopes the list).
-  const path =
-    sectionId === null ? null : subjectId ? `/homework${qs({ sectionId, page: 1, limit: 100 })}` : `/homework${qs({ sectionId, page, limit: PAGE_SIZE })}`;
-  const list = useApi<{ data: HomeworkRow[]; meta: PageMeta }>(path);
-  const rows = (list.data?.data ?? []).filter((h) => !subjectId || h.subject?.id === subjectId);
+  // The server filters and scopes: teachers asking for "All my classes" get their own sections.
+  const list = useApi<{ data: HomeworkRow[]; meta: PageMeta }>(
+    sections === null && !secError ? null : `/homework${qs({ sectionId, classId, subjectId, from, to, dateField: from || to ? dateField : '', search, page: f.page, limit: PAGE_SIZE })}`,
+  );
+  const rows = list.data?.data ?? [];
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+    chip('subjectId', 'Subject', subjectId, subjects.data?.data.find((x) => x.id === subjectId)?.name, () => f.set({ subjectId: '' })),
+    (from || to) && { key: 'date', label: `${dateField === 'due' ? 'Due' : 'Set'}: ${describeRange(from, to, todayIso())}`, onRemove: () => f.set({ from: '', to: '' }) },
+  ];
 
   function patchRow(id: string, change: Partial<HomeworkRow>) {
     list.setData((prev) => (prev ? { ...prev, data: prev.data.map((r) => (r.id === id ? { ...r, ...change } : r)) } : prev));
@@ -86,40 +100,6 @@ export default function HomeworkScreen() {
               <Notice tone="info">{NO_SUBJECTS} You can still see the homework set for your class.</Notice>
             </div>
           )}
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <Select
-              aria-label="Class"
-              value={sectionId ?? ''}
-              onChange={(e) => {
-                setSectionId(e.target.value);
-                setPage(1);
-              }}
-              className="!w-48"
-              disabled={!sections}
-            >
-              <option value={ALL}>{isTeacher ? 'All my classes' : 'All classes'}</option>
-              {sections?.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                  {s.mine ? ' (my class)' : ''}
-                </option>
-              ))}
-            </Select>
-            <Select aria-label="Subject filter" value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="!w-48" disabled={!subjects.data}>
-              <option value={ALL}>All subjects</option>
-              {subjects.data?.data.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-            {list.data && (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {subjectId ? `${rows.length} item${rows.length === 1 ? '' : 's'}` : `${list.data.meta.total} item${list.data.meta.total === 1 ? '' : 's'}`}
-              </p>
-            )}
-          </div>
-
           {flash && (
             <div className="mb-4">
               <Notice tone={flash.tone}>{flash.text}</Notice>
@@ -127,6 +107,36 @@ export default function HomeworkScreen() {
           )}
 
           <Card padded={false}>
+            <FilterBar
+              search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Title or details" />}
+              chips={chips}
+              onClear={f.clear}
+              extra={list.data ? <ResultCount total={list.data.meta.total} noun={['item', 'items']} filtered={f.active > 0} /> : undefined}
+            >
+              <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+              <SelectFilter
+                label="Subject"
+                name="subjectId"
+                value={subjectId}
+                allLabel="All subjects"
+                options={subjectChoices.map((x) => ({ value: x.id, label: x.name }))}
+                onChange={(v) => f.set({ subjectId: v })}
+              />
+              <DateRangeFilter label={dateField === 'due' ? 'Due' : 'Set on'} from={from} to={to} today={todayIso()} onChange={(r) => f.set(r)} />
+              {(from || to) && (
+                <SelectFilter
+                  label="Dates are"
+                  name="dateField"
+                  value={dateField}
+                  options={[
+                    { value: 'assigned', label: 'Day it was set' },
+                    { value: 'due', label: 'Due date' },
+                  ]}
+                  onChange={(v) => f.set({ dateField: v })}
+                  className="sm:w-40"
+                />
+              )}
+            </FilterBar>
             {secError ? (
               <ErrorState message={secError} onRetry={reloadSections} />
             ) : list.error ? (
@@ -134,10 +144,13 @@ export default function HomeworkScreen() {
             ) : !list.data ? (
               <Spinner label="Loading homework…" />
             ) : rows.length === 0 ? (
+              f.active > 0 ? (
+                <FilteredEmpty what="homework" chips={chips} onClear={f.clear} icon={<BookOpenCheck className="h-7 w-7" aria-hidden />} />
+              ) : (
               <EmptyState
                 icon={<BookOpenCheck className="h-7 w-7" aria-hidden />}
                 title="No homework here yet"
-                description={subjectId ? 'Nothing set for this subject recently.' : 'Homework you set appears here and in the parent app.'}
+                description="Homework you set appears here and in the parent app."
                 action={
                   canSet ? (
                     <Button size="sm" icon={<Plus className="h-3.5 w-3.5" aria-hidden />} onClick={() => setCreating(true)}>
@@ -146,6 +159,7 @@ export default function HomeworkScreen() {
                   ) : undefined
                 }
               />
+              )
             ) : (
               <>
                 <Table className={cx(list.loading && 'opacity-60')}>
@@ -221,7 +235,7 @@ export default function HomeworkScreen() {
                     })}
                   </tbody>
                 </Table>
-                {!subjectId && <Pagination page={list.data.meta.page} totalPages={list.data.meta.totalPages} onChange={setPage} />}
+                <Pagination page={list.data.meta.page} totalPages={list.data.meta.totalPages} onChange={f.setPage} />
               </>
             )}
           </Card>
@@ -232,7 +246,7 @@ export default function HomeworkScreen() {
         <CreateHomework
           sections={settable}
           subjectOptions={subjectOptions}
-          initialSectionId={settable.some((s) => s.id === sectionId) ? sectionId! : settable.find((s) => s.mine)?.id ?? settable[0].id}
+          initialSectionId={settable.some((s) => s.id === sectionId) ? sectionId : settable.find((s) => s.mine)?.id ?? settable[0].id}
           initialSubjectId={subjectId}
           onClose={() => setCreating(false)}
           onDone={(row, failedFiles) => {
@@ -243,9 +257,13 @@ export default function HomeworkScreen() {
                 ? { tone: 'warn', text: `Homework "${row.title}" set for ${row.section.label}, but ${failedFiles} file${failedFiles === 1 ? '' : 's'} could not be attached. Use "Files" on the homework to try again.` }
                 : { tone: 'success', text: `Homework "${row.title}" set for ${row.section.label}${files ? ` with ${files} file${files === 1 ? '' : 's'}` : ''}.` },
             );
-            if (sectionId && sectionId !== row.section.id) setSectionId(row.section.id);
-            setPage(1);
-            list.reload();
+            // Show the new homework: switch to its class when another one is filtered.
+            if ((sectionId && sectionId !== row.section.id) || (classId && cls.section(row.section.id)?.classId !== classId)) {
+              f.set({ classId: cls.section(row.section.id)?.classId ?? '', sectionId: row.section.id });
+            } else {
+              f.setPage(1);
+              list.reload();
+            }
           }}
         />
       )}

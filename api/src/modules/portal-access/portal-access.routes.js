@@ -23,7 +23,8 @@ const listQuery = z
     search: z.string().trim().max(100).optional(),
     classId: uuid.optional(),
     sectionId: uuid.optional(),
-    status: z.enum(['none', 'temporary', 'active', 'locked', 'inactive']).optional(),
+    // none = no login yet, temporary = must change password, has_login = temporary + active + locked
+    status: z.enum(['none', 'temporary', 'active', 'locked', 'inactive', 'has_login']).optional(),
     page,
     limit: limit(25, 100),
   })

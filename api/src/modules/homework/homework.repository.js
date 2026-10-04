@@ -15,7 +15,11 @@ const FROM = `
  * Newest first. scope: { tenantId, branchIds } (null = any); sectionId optional;
  * sectionIds (array) limits to those sections (null = no limit).
  */
-export async function listHomework({ scope, sectionId, sectionIds = null, page, limit }) {
+export async function listHomework({ scope, sectionId, sectionIds = null, page, limit, filters = {} }) {
+  const { classId, subjectId, dateField = 'assigned', from, to, search } = filters;
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  // assigned_at is a timestamp: compare its day in the school's time zone.
+  const day = dateField === 'due' ? 'h.due_date' : `(h.assigned_at AT TIME ZONE COALESCE((SELECT t.timezone FROM tenants t WHERE t.id = h.tenant_id), 'Asia/Kolkata'))::date`;
   const { rows } = await query(
     `${SELECT}, count(*) OVER () AS total_count
      ${FROM}
@@ -23,9 +27,15 @@ export async function listHomework({ scope, sectionId, sectionIds = null, page, 
         AND ($1::uuid IS NULL OR h.tenant_id = $1) AND ($2::uuid[] IS NULL OR h.branch_id = ANY ($2))
         AND ($3::uuid IS NULL OR h.section_id = $3)
         AND ($6::uuid[] IS NULL OR h.section_id = ANY ($6))
+        AND ($7::uuid IS NULL OR s.class_id = $7)
+        AND ($8::uuid IS NULL OR h.subject_id = $8)
+        AND ($9::date IS NULL OR ${day} >= $9)
+        AND ($10::date IS NULL OR ${day} <= $10)
+        AND ($11::text IS NULL OR h.title ILIKE $11 OR h.details ILIKE $11)
       ORDER BY h.assigned_at DESC, h.id
       LIMIT $4 OFFSET $5`,
-    [scope.tenantId, scope.branchIds, sectionId ?? null, limit, (page - 1) * limit, sectionIds],
+    [scope.tenantId, scope.branchIds, sectionId ?? null, limit, (page - 1) * limit, sectionIds,
+      classId ?? null, subjectId ?? null, from ?? null, to ?? null, like],
   );
   return rows;
 }

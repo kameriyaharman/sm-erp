@@ -10,7 +10,16 @@ const passMarks = z.coerce.number().min(0).max(1000).multipleOf(0.25, 'Use steps
 
 const datesInOrder = (b) => !b.startDate || !b.endDate || b.startDate <= b.endDate;
 
-export const listQuery = z.object({ branchId: uuid.optional() }).strict();
+export const listQuery = z
+  .object({
+    termId: uuid.optional(),
+    status: z.enum(EXAM_STATUSES).optional(),
+    examType: z.enum(EXAM_TYPES).optional(),
+    classId: uuid.optional(),      // exams with at least one paper for this class
+    search: z.string().trim().min(1).max(100).optional(),
+    branchId: uuid.optional(),
+  })
+  .strict();
 
 export const createExamBody = z
   .object({
@@ -36,7 +45,7 @@ export const updateExamBody = z
   .refine((b) => Object.keys(b).length > 0, 'Nothing to update')
   .refine(datesInOrder, { message: 'End date must be on or after the start date', path: ['endDate'] });
 
-export const papersQuery = z.object({ classId: uuid.optional() }).strict();
+export const papersQuery = z.object({ classId: uuid.optional(), subjectId: uuid.optional() }).strict();
 
 export const createPapersBody = z
   .object({

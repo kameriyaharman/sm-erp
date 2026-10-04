@@ -198,11 +198,13 @@ function assertSectionAccess(auth, ctx) {
 }
 
 /** Report cards of a section (termId omitted = annual cards). Teacher: class teacher only, as for generate. */
-export async function listSectionReportCards(auth, sectionId, { termId }) {
+export async function listSectionReportCards(auth, sectionId, { termId, status, result, search }) {
   const ctx = await repo.getSectionContext(pool, sectionId, auth.userId);
   if (!ctx) throw AppError.notFound('Section not found', 'SECTION_NOT_FOUND');
   assertSectionAccess(auth, ctx);
-  const rows = await repo.listSectionReportCards(pool, { sectionId, academicYearId: ctx.academic_year_id, termId: termId ?? null });
+  const rows = await repo.listSectionReportCards(pool, {
+    sectionId, academicYearId: ctx.academic_year_id, termId: termId ?? null, status: status ?? null, result: result ?? null, search: search ?? null,
+  });
   return rows.map((r) => ({
     id: r.id,
     studentId: r.student_id,
@@ -518,9 +520,12 @@ export async function cancelCertificate(auth, id, { reason }) {
   });
 }
 
+/** Rows stay snake_case (as before); `class_label` added. Returns { rows, total }. */
 export async function listCertificates(auth, filters) {
   const scope = await resolveBranchScope(auth, filters);
-  return repo.listCertificates(pool, { scope, ...filters });
+  const rows = await repo.listCertificates(pool, { scope, ...filters });
+  const total = rows.length ? Number(rows[0].total_count) : 0;
+  return { rows: rows.map(({ total_count: _t, ...r }) => r), total };
 }
 
 /** Public: what the QR code shows. No login; only what's needed to confirm a printed copy. */

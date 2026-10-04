@@ -145,7 +145,7 @@ export default function HeadsTab({
   );
 }
 
-function HeadModal({ open, head, onClose, onSaved }: { open: boolean; head: FeeHead | null; onClose: () => void; onSaved: (h: FeeHead) => void }) {
+export function HeadModal({ open, head, onClose, onSaved }: { open: boolean; head: FeeHead | null; onClose: () => void; onSaved: (h: FeeHead) => void }) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [type, setType] = useState<'recurring' | 'one_time'>('recurring');

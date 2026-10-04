@@ -55,39 +55,51 @@ const BASE_SELECT = `
     LEFT JOIN fee_receipts r  ON r.id = o.receipt_id
     LEFT JOIN users cu        ON cu.id = o.created_by`;
 
-export async function listOnlinePayments(auth, q) {
-  const scope = await resolveBranchScope(auth, { branchId: q.branchId });
-  const search = q.search ? `%${q.search.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
-  const { rows } = await pool.query(
-    `${BASE_SELECT}
+/** WHERE for the list and its totals: $1 tenant, $2 branches, $3 status ... $8 section (shared by both queries). */
+const LIST_FILTER = `
       WHERE ($1::uuid IS NULL OR o.tenant_id = $1) AND ($2::uuid[] IS NULL OR o.branch_id = ANY ($2))
         AND ($3::text IS NULL OR ${SHOWN_STATUS} = $3)
         AND ($4::date IS NULL OR (o.created_at AT TIME ZONE t.timezone)::date >= $4)
         AND ($5::date IS NULL OR (o.created_at AT TIME ZONE t.timezone)::date <= $5)
         AND ($6::text IS NULL OR concat_ws(' ', su.first_name, su.last_name) ILIKE $6 OR sp.admission_number ILIKE $6
              OR o.gateway_order_id ILIKE $6 OR o.gateway_payment_id ILIKE $6 OR r.receipt_number ILIKE $6)
+        AND ($7::uuid IS NULL OR sp.class_id = $7)
+        AND ($8::uuid IS NULL OR sp.section_id = $8)`;
+
+export async function listOnlinePayments(auth, q) {
+  const scope = await resolveBranchScope(auth, { branchId: q.branchId });
+  const search = q.search ? `%${q.search.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
+  const params = [scope.tenantId, scope.branchIds, q.status ?? null, q.from ?? null, q.to ?? null, search, q.classId ?? null, q.sectionId ?? null];
+  const { rows } = await pool.query(
+    `${BASE_SELECT}
+     ${LIST_FILTER}
       ORDER BY o.created_at DESC, o.id
-      LIMIT $7 OFFSET $8`,
-    [scope.tenantId, scope.branchIds, q.status ?? null, q.from ?? null, q.to ?? null, search, q.limit, (q.page - 1) * q.limit],
+      LIMIT $9 OFFSET $10`,
+    [...params, q.limit, (q.page - 1) * q.limit],
   );
-  const { rows: [{ total }] } = await pool.query(
-    `SELECT count(*)::int AS total
+  // Totals over every order matching the filters (not just this page).
+  const { rows: [totals] } = await pool.query(
+    `SELECT count(*)::int AS total,
+            count(r.id)::int AS receipts,
+            COALESCE(sum(r.amount), 0)::text AS collected,
+            COALESCE(sum(o.amount), 0)::text AS amount
        FROM payment_orders o
        JOIN tenants t           ON t.id = o.tenant_id
        JOIN student_profiles sp ON sp.id = o.student_id
        JOIN users su            ON su.id = sp.user_id
        LEFT JOIN fee_receipts r ON r.id = o.receipt_id
-      WHERE ($1::uuid IS NULL OR o.tenant_id = $1) AND ($2::uuid[] IS NULL OR o.branch_id = ANY ($2))
-        AND ($3::text IS NULL OR ${SHOWN_STATUS} = $3)
-        AND ($4::date IS NULL OR (o.created_at AT TIME ZONE t.timezone)::date >= $4)
-        AND ($5::date IS NULL OR (o.created_at AT TIME ZONE t.timezone)::date <= $5)
-        AND ($6::text IS NULL OR concat_ws(' ', su.first_name, su.last_name) ILIKE $6 OR sp.admission_number ILIKE $6
-             OR o.gateway_order_id ILIKE $6 OR o.gateway_payment_id ILIKE $6 OR r.receipt_number ILIKE $6)`,
-    [scope.tenantId, scope.branchIds, q.status ?? null, q.from ?? null, q.to ?? null, search],
+     ${LIST_FILTER}`,
+    params,
   );
   return {
     data: rows.map(mapRow),
-    meta: { page: q.page, limit: q.limit, total, totalPages: Math.ceil(total / q.limit) },
+    meta: {
+      page: q.page,
+      limit: q.limit,
+      total: totals.total,
+      totalPages: Math.ceil(totals.total / q.limit),
+      totals: { orders: totals.total, amount: totals.amount, receipts: totals.receipts, collected: totals.collected },
+    },
   };
 }
 

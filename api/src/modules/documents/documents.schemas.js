@@ -7,7 +7,14 @@ const text = (max) => z.string().trim().min(1).max(max);
 export const idParams = z.object({ id: uuid });
 export const studentParams = z.object({ studentId: uuid });
 export const sectionParams = z.object({ sectionId: uuid });
-export const sectionReportCardsQuery = z.object({ termId: uuid.optional() }).strict();
+export const sectionReportCardsQuery = z
+  .object({
+    termId: uuid.optional(),
+    status: z.enum(['draft', 'generated', 'published', 'revoked']).optional(),
+    result: z.enum(['pass', 'fail', 'promoted', 'detained', 'withheld', 'pending']).optional(),
+    search: z.string().trim().min(1).max(100).optional(),   // student name, roll or admission no.
+  })
+  .strict();
 export const codeParams = z.object({ code: z.string().trim().min(12).max(20) });
 
 export const generateBody = z.object({
@@ -43,13 +50,23 @@ export const bonafideBody = z.object({
 
 export const cancelBody = z.object({ reason: text(255) }).strict();
 
-export const certificateListQuery = z.object({
-  studentId: uuid.optional(),
-  type: z.enum(['transfer_certificate', 'bonafide']).optional(),
-  branchId: uuid.optional(),
-  tenantId: uuid.optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-});
+export const certificateListQuery = z
+  .object({
+    studentId: uuid.optional(),
+    type: z.enum(['transfer_certificate', 'bonafide']).optional(),
+    status: z.enum(['issued', 'cancelled']).optional(),
+    from: isoDate.optional(),           // issued on or after (school time zone)
+    to: isoDate.optional(),
+    classId: uuid.optional(),           // the student's current class / section
+    sectionId: uuid.optional(),
+    search: z.string().trim().min(1).max(100).optional(),   // student name, admission no. or certificate no.
+    branchId: uuid.optional(),
+    tenantId: uuid.optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict()
+  .refine((q) => !q.from || !q.to || q.from <= q.to, { message: '"from" must be on or before "to"', path: ['to'] });
 
 export const certificatePdfQuery = z.object({
   copy: z.enum(['original', 'duplicate']).optional(),

@@ -114,13 +114,18 @@ const ENTRY_SELECT = `
          le.payment_mode, le.reference, le.voucher_no, le.source, le.fee_receipt_id, le.expense_id, le.transfer_id,
          le.fee_transaction_id, le.reverses_entry_id, le.created_at, le.deleted_at, le.delete_reason,
          a.id AS account_id, a.name AS account_name, a.account_type,
-         fr.student_id,
+         fr.student_id, concat_ws(' ', fsu.first_name, fsu.last_name) AS student_name, fsp.admission_number,
+         NULLIF(concat_ws(' ', fc.name, fsec.name), '') AS student_class_label,
          (SELECT o.id FROM payment_orders o WHERE o.receipt_id = le.fee_receipt_id AND le.source = 'fee_receipt' LIMIT 1) AS payment_order_id,
          NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS created_by_name,
          NULLIF(concat_ws(' ', du.first_name, du.last_name), '') AS deleted_by_name
     FROM ledger_entries le
     JOIN accounts a       ON a.id = le.account_id
     LEFT JOIN fee_receipts fr ON fr.id = le.fee_receipt_id
+    LEFT JOIN student_profiles fsp ON fsp.id = fr.student_id
+    LEFT JOIN users fsu       ON fsu.id = fsp.user_id
+    LEFT JOIN classes fc      ON fc.id = fsp.class_id
+    LEFT JOIN sections fsec   ON fsec.id = fsp.section_id
     LEFT JOIN users cu    ON cu.id = le.created_by
     LEFT JOIN users du    ON du.id = le.deleted_by`;
 
@@ -154,23 +159,30 @@ export async function dailyTotals(db, { branchId, accountId, from, to }) {
 
 function ledgerFilter(f) {
   const params = [f.branchId, f.from ?? null, f.to ?? null, f.direction ?? null, f.category ?? null, f.accountId ?? null, f.source ?? null,
-    f.search ? `%${f.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null, f.includeDeleted === true];
+    f.search ? `%${f.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null, f.includeDeleted === true,
+    f.paymentMode ?? null, f.classId ?? null, f.sectionId ?? null];
   const where = `le.branch_id = $1
         AND ($9::boolean OR le.deleted_at IS NULL)
         AND ($2::date IS NULL OR le.entry_date >= $2) AND ($3::date IS NULL OR le.entry_date <= $3)
         AND ($4::text IS NULL OR le.direction = $4) AND ($5::text IS NULL OR le.category = $5)
         AND ($6::uuid IS NULL OR le.account_id = $6) AND ($7::text IS NULL OR le.source = $7)
-        AND ($8::text IS NULL OR le.party ILIKE $8 OR le.description ILIKE $8 OR le.voucher_no ILIKE $8 OR le.reference ILIKE $8)`;
+        AND ($8::text IS NULL OR le.party ILIKE $8 OR le.description ILIKE $8 OR le.voucher_no ILIKE $8 OR le.reference ILIKE $8)
+        AND ($10::text IS NULL OR le.payment_mode = $10)
+        AND (($11::uuid IS NULL AND $12::uuid IS NULL) OR EXISTS (
+              SELECT 1 FROM fee_receipts frx JOIN student_profiles spx ON spx.id = frx.student_id
+               WHERE frx.id = le.fee_receipt_id
+                 AND ($11::uuid IS NULL OR spx.class_id = $11) AND ($12::uuid IS NULL OR spx.section_id = $12)))`;
   return { params, where };
 }
 
 export async function listLedger(db, filters) {
   const { params, where } = ledgerFilter(filters);
+  const n = params.length;
   const [{ rows }, { rows: [totals] }] = await Promise.all([
     db.query(
       `${ENTRY_SELECT} WHERE ${where}
         ORDER BY le.entry_date DESC, le.posted_at DESC, le.created_at DESC, le.id
-        LIMIT $10 OFFSET $11`,
+        LIMIT $${n + 1} OFFSET $${n + 2}`,
       [...params, filters.limit, (filters.page - 1) * filters.limit],
     ),
     db.query(
@@ -182,6 +194,18 @@ export async function listLedger(db, filters) {
     ),
   ]);
   return { rows, totals };
+}
+
+/** Every entry matching the list filters, oldest first (CSV of the entries list). */
+export async function ledgerRows(db, filters, max = 20000) {
+  const { params, where } = ledgerFilter(filters);
+  const { rows } = await db.query(
+    `${ENTRY_SELECT} WHERE ${where}
+      ORDER BY le.entry_date, le.posted_at, le.created_at, le.id
+      LIMIT $${params.length + 1}`,
+    [...params, max],
+  );
+  return rows;
 }
 
 export async function categoryTotals(db, { branchId, from, to }) {

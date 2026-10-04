@@ -1,7 +1,19 @@
 import { z } from 'zod';
-import { hhmm, optionalText, text, uuid } from '../shared/schemas.js';
+import { hhmm, limit, optionalText, page, text, uuid } from '../shared/schemas.js';
 
 export const listQuery = z.object({ branchId: uuid.optional() }).strict();
+
+/** Riders filters (student's current class / section). */
+const riderFilters = {
+  stopId: uuid.optional(),
+  classId: uuid.optional(),
+  sectionId: uuid.optional(),
+  search: z.string().trim().min(1).max(100).optional(),   // student name, admission no., parent phone
+};
+export const routeStudentsQuery = z.object(riderFilters).strict();
+export const ridersQuery = z
+  .object({ ...riderFilters, routeId: uuid.optional(), branchId: uuid.optional(), page, limit: limit(50, 200) })
+  .strict();
 
 const stop = z.object({ name: text(2, 100), pickupTime: hhmm, dropTime: hhmm }).strict();
 const stops = z

@@ -1,14 +1,16 @@
 'use client';
 
+import FeesNav from '@/features/fees/FeesNav';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BellRing } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Spinner, Stat, Table, Td, Th } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Pagination, Spinner, Stat, Table, Td, Th } from '@/components/ui';
+import { ClassSectionFilter, FilterBar, FilterSearch, FilteredEmpty, SelectFilter, chip, classSectionChips, useClassOptions, useUrlFilters } from '@/components/filters';
 import { qs, useApi } from '@/lib/useApi';
 import { apiSend } from '@/lib/session';
 import { formatDate, formatInr } from '@/lib/format';
-import { ConfirmModal, FilterBar, PhoneLink, errorText, useClasses, useFlash } from './shared';
+import { ConfirmModal, PhoneLink, errorText, useFlash } from './shared';
 import type { BatchStarted, DefaulterRow, DefaultersMeta, FeeReminderPreview, Paged, Wrapped } from './types';
 
 function severity(days: number): { tone: 'red' | 'amber' | 'gray'; label: string } {
@@ -17,22 +19,49 @@ function severity(days: number): { tone: 'red' | 'amber' | 'gray'; label: string
   return { tone: 'gray', label: 'Recently due' };
 }
 
+const DAYS = [
+  { value: '0', label: 'Any time' },
+  { value: '30', label: '30+ days' },
+  { value: '60', label: '60+ days' },
+  { value: '90', label: '90+ days' },
+];
+const AMOUNTS = [
+  { value: '5000', label: '₹5,000+' },
+  { value: '10000', label: '₹10,000+' },
+  { value: '25000', label: '₹25,000+' },
+];
+const SORTS = [
+  { value: 'amount', label: 'Highest due' },
+  { value: 'days', label: 'Longest overdue' },
+];
+
+/** /fees/defaulters?classId=…&sectionId=…&minDays=30&minAmount=5000&search=…&sort=days */
+const DEFAULTS = { search: '', classId: '', sectionId: '', minDays: '0', minAmount: '', sort: 'amount' };
+
 export default function DefaultersPage() {
   const router = useRouter();
-  const { classes, sections } = useClasses();
+  const f = useUrlFilters(DEFAULTS);
+  const cls = useClassOptions();
   const flash = useFlash(12000);
-  const [classId, setClassId] = useState('');
-  const [sectionId, setSectionId] = useState('');
-  const [minDays, setMinDays] = useState(0);
-  const [minAmount, setMinAmount] = useState(0);
-  const [sort, setSort] = useState<'amount' | 'days'>('amount');
-  const [page, setPage] = useState(1);
-  useEffect(() => setPage(1), [classId, sectionId, minDays, minAmount, sort]);
+  const { search, classId, sectionId, minDays, minAmount } = f.values;
+  const sort = f.values.sort === 'days' ? 'days' : 'amount';
 
   const { data, error, loading, reload } = useApi<Paged<DefaulterRow, DefaultersMeta>>(
-    `/finance/defaulters${qs({ classId, sectionId, minDaysOverdue: minDays || undefined, minAmount: minAmount || undefined, sort, page, limit: 25 })}`,
+    `/finance/defaulters${qs({ search, classId, sectionId, minDaysOverdue: minDays && minDays !== '0' ? minDays : undefined, minAmount: minAmount || undefined, sort, page: f.page, limit: 25 })}`,
   );
-  const classSections = useMemo(() => sections.filter((s) => s.classId === classId), [sections, classId]);
+
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+    chip('minDays', 'Overdue', minDays, DAYS.find((d) => d.value === minDays)?.label ?? `${minDays}+ days`, () => f.set({ minDays: '0' }), !minDays || minDays === '0'),
+    chip('minAmount', 'Due', minAmount, AMOUNTS.find((a) => a.value === minAmount)?.label ?? `₹${minAmount}+`, () => f.set({ minAmount: '' })),
+  ];
+  // Reminders go to the class / section in the filters (the server supports both); the other filters don't apply to them.
+  const reminderScope = sectionId
+    ? `${cls.section(sectionId)?.label ?? 'this section'}`
+    : classId
+      ? `${cls.className(classId) ?? 'this class'}`
+      : 'the whole school';
 
   // ---- reminders: dry run first, then confirm
   const daysAhead = 3;
@@ -40,12 +69,13 @@ export default function DefaultersPage() {
   const [previewing, setPreviewing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const reminderBody = { daysAhead, includeOverdue: true, ...(classId && { classId }), ...(sectionId && { sectionId }) };
 
   async function startReminders() {
     setPreviewing(true);
     setSendError(null);
     try {
-      const res = await apiSend<Wrapped<FeeReminderPreview>>('POST', '/notifications/fee-reminders/run', { dryRun: true, daysAhead, includeOverdue: true });
+      const res = await apiSend<Wrapped<FeeReminderPreview>>('POST', '/notifications/fee-reminders/run', { ...reminderBody, dryRun: true });
       setPreview(res.data);
     } catch (err) {
       flash.show('error', errorText(err));
@@ -57,13 +87,13 @@ export default function DefaultersPage() {
     setSending(true);
     setSendError(null);
     try {
-      await apiSend<Wrapped<BatchStarted>>('POST', '/notifications/fee-reminders/run', { dryRun: false, daysAhead, includeOverdue: true });
+      await apiSend<Wrapped<BatchStarted>>('POST', '/notifications/fee-reminders/run', { ...reminderBody, dryRun: false });
       const n = preview?.reminders ?? 0;
       setPreview(null);
       flash.show(
         'success',
         <span>
-          Sending {n} fee reminder{n === 1 ? '' : 's'} in the background.{' '}
+          Sending {n} fee reminder{n === 1 ? '' : 's'} to parents in {reminderScope} in the background.{' '}
           <Link href="/notifications?eventType=fee_due_reminder" className="font-medium underline">
             Track delivery
           </Link>
@@ -78,69 +108,43 @@ export default function DefaultersPage() {
 
   return (
     <Page wide>
+      <FeesNav />
       <PageHeader
         title="Fee defaulters"
         description={data ? `Overdue invoices as of ${formatDate(data.meta.asOf)}` : 'Students with overdue invoices'}
         actions={
           <Button icon={<BellRing className="h-4 w-4" aria-hidden />} onClick={startReminders} loading={previewing}>
-            Send fee reminders
+            {classId || sectionId ? `Send reminders: ${reminderScope}` : 'Send fee reminders'}
           </Button>
         }
       />
       {flash.node}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <Stat label="Students overdue" value={data ? data.meta.total.toLocaleString('en-IN') : '-'} tone={data && data.meta.total > 0 ? 'bad' : 'default'} />
-        <Stat label="Total outstanding" value={data ? formatInr(data.meta.totalOutstanding) : '-'} tone="bad" hint="matching the filters" />
+        <Stat label="Students overdue" value={data ? data.meta.total.toLocaleString('en-IN') : '-'} tone={data && data.meta.total > 0 ? 'bad' : 'default'} hint={chips.some(Boolean) ? 'matching the filters' : undefined} />
+        <Stat label="Total outstanding" value={data ? formatInr(data.meta.totalOutstanding) : '-'} tone="bad" hint={chips.some(Boolean) ? 'matching the filters' : 'all overdue invoices'} />
         <Stat label="Average per student" value={data && data.meta.total ? formatInr(Math.round(Number(data.meta.totalOutstanding) / data.meta.total)) : '-'} />
       </div>
       <Card padded={false}>
-        <FilterBar>
-          <Select
-            label="Class"
-            value={classId}
-            onChange={(e) => {
-              setClassId(e.target.value);
-              setSectionId('');
-            }}
-          >
-            <option value="">All classes</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Section" value={sectionId} onChange={(e) => setSectionId(e.target.value)} disabled={!classId}>
-            <option value="">All sections</option>
-            {classSections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Overdue for" value={minDays} onChange={(e) => setMinDays(Number(e.target.value))}>
-            <option value={0}>Any time</option>
-            <option value={30}>30+ days</option>
-            <option value={60}>60+ days</option>
-            <option value={90}>90+ days</option>
-          </Select>
-          <Select label="Amount due" value={minAmount} onChange={(e) => setMinAmount(Number(e.target.value))}>
-            <option value={0}>Any amount</option>
-            <option value={5000}>₹5,000+</option>
-            <option value={10000}>₹10,000+</option>
-            <option value={25000}>₹25,000+</option>
-          </Select>
-          <Select label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
-            <option value="amount">Highest due</option>
-            <option value="days">Longest overdue</option>
-          </Select>
+        <FilterBar
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Student, admission no., parent" />}
+          chips={chips}
+          onClear={f.clear}
+          extra={<SelectFilter label="Sort by" name="sort" value={sort} onChange={(v) => f.set({ sort: v })} options={SORTS} />}
+        >
+          <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+          <SelectFilter label="Overdue for" name="minDays" value={minDays || '0'} options={DAYS} onChange={(v) => f.set({ minDays: v })} />
+          <SelectFilter label="Amount due" name="minAmount" value={minAmount} allLabel="Any amount" options={AMOUNTS} onChange={(v) => f.set({ minAmount: v })} />
         </FilterBar>
         {loading && !data ? (
           <Spinner label="Loading defaulters…" />
         ) : error ? (
           <ErrorState message={error} onRetry={reload} />
         ) : !data?.data.length ? (
-          <EmptyState title="No overdue fees" description="No student matches these filters. Everyone is up to date." />
+          chips.some(Boolean) ? (
+            <FilteredEmpty what="defaulters" chips={chips} onClear={f.clear} />
+          ) : (
+            <EmptyState title="No overdue fees" description="Everyone is up to date." />
+          )
         ) : (
           <div className={loading ? 'opacity-60' : undefined}>
             <Table>
@@ -200,7 +204,7 @@ export default function DefaultersPage() {
                 })}
               </tbody>
             </Table>
-            <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={setPage} />
+            <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={f.setPage} />
           </div>
         )}
       </Card>
@@ -209,9 +213,12 @@ export default function DefaultersPage() {
         {preview && (
           <>
             <p>
-              Parents of <strong>{preview.students}</strong> student{preview.students === 1 ? '' : 's'} will get an SMS / WhatsApp reminder for <strong>{formatInr(preview.totalDue)}</strong> due (overdue invoices and
+              Parents of <strong>{preview.students}</strong> student{preview.students === 1 ? '' : 's'} in <strong>{reminderScope}</strong> will get an SMS / WhatsApp reminder for <strong>{formatInr(preview.totalDue)}</strong> due (overdue invoices and
               instalments due in the next {daysAhead} days).
             </p>
+            {(search || (minDays && minDays !== '0') || minAmount) && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">Reminders follow the class and section filters only; search, days and amount filters do not narrow them.</p>
+            )}
             {preview.noPhone > 0 && <p className="text-amber-700 dark:text-amber-300">{preview.noPhone} parent(s) have no mobile number and will be skipped.</p>}
             <p className="text-xs text-slate-500 dark:text-slate-400">No SMS provider is configured in the demo, so messages are logged as failed. See the SMS / WhatsApp log.</p>
           </>

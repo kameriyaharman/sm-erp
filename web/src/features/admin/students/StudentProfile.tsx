@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Bus, FileBadge, FileDown, IndianRupee, Pencil, Receipt, ScrollText } from 'lucide-react';
+import { ArrowLeft, Bus, FileBadge, FileDown, IndianRupee, Pencil, PlusCircle, Receipt, ScrollText } from 'lucide-react';
 import { Badge, Button, buttonClass, Card, EmptyState, ErrorState, Notice, Page, PageHeader, Spinner, Stat, Table, Tabs, Td, Th } from '@/components/ui';
 import { useApi } from '@/lib/useApi';
 import { API_BASE, apiSend, getAccessToken, openPdf } from '@/lib/session';
 import { formatDate, formatDateTime, formatInr, formatTime, titleCase } from '@/lib/format';
 import CollectFeeModal from '@/features/fees/CollectFeeModal';
+import AddChargeModal from '@/features/fees/AddChargeModal';
 import { createFeesApi, type StudentDues, type StudentFeeRow } from '@/features/fees/api';
 import { toPaise } from '@/features/fees/format';
 import { ConfirmModal, DefinitionList, ReportCardBadge, StudentStatusBadge, errorText, useFlash } from '../shared';
@@ -25,7 +26,7 @@ export default function StudentProfile() {
   const { data, error, loading, reload, setData } = useApi<Wrapped<StudentDetail>>(`/students/${id}`);
   const flash = useFlash();
   const [tab, setTab] = useState<Tab>('overview');
-  const [modal, setModal] = useState<null | 'collect' | 'bonafide' | 'tc' | 'bus' | 'unbus'>(null);
+  const [modal, setModal] = useState<null | 'collect' | 'charge' | 'bonafide' | 'tc' | 'bus' | 'unbus'>(null);
   const [busy, setBusy] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [duesKey, setDuesKey] = useState(0);
@@ -191,7 +192,7 @@ export default function StudentProfile() {
 
       {tab === 'overview' && <StudentOverview s={s} canEdit />}
 
-      {tab === 'fees' && <FeesTab studentId={s.id} reloadKey={duesKey} canCollect={active} onCollect={() => setModal('collect')} admissionNumber={s.admissionNumber} />}
+      {tab === 'fees' && <FeesTab studentId={s.id} reloadKey={duesKey} canCollect={active} onCollect={() => setModal('collect')} onCharge={() => setModal('charge')} admissionNumber={s.admissionNumber} />}
 
       {tab === 'attendance' && (
         <Card title="Attendance this year">
@@ -383,6 +384,17 @@ export default function StudentProfile() {
           }}
         />
       )}
+      <AddChargeModal
+        open={modal === 'charge'}
+        student={{ id: s.id, name: s.name, classLabel }}
+        onClose={() => setModal(null)}
+        onDone={(r) => {
+          setModal(null);
+          flash.show('success', r.invoicesCreated > 0 ? `Charged ${formatInr(r.amount)} “${r.description}” to ${s.name}.` : `${s.name} already had this charge.`);
+          reload();
+          setDuesKey((k) => k + 1);
+        }}
+      />
       <BonafideModal student={s} open={modal === 'bonafide'} onClose={() => setModal(null)} onIssued={() => reload()} />
       <TcModal student={s} open={modal === 'tc'} onClose={() => setModal(null)} onIssued={() => reload()} />
       <AssignModal
@@ -430,7 +442,7 @@ function PdfButton({ path, filename, onError }: { path: string; filename: string
   );
 }
 
-function FeesTab({ studentId, reloadKey, canCollect, onCollect, admissionNumber }: { studentId: string; reloadKey: number; canCollect: boolean; onCollect: () => void; admissionNumber: string }) {
+function FeesTab({ studentId, reloadKey, canCollect, onCollect, onCharge, admissionNumber }: { studentId: string; reloadKey: number; canCollect: boolean; onCollect: () => void; onCharge: () => void; admissionNumber: string }) {
   const { data, error, loading, reload } = useApi<Wrapped<StudentDues>>(`/fees/students/${studentId}/dues`);
   useEffect(() => {
     if (reloadKey > 0) reload();
@@ -446,6 +458,11 @@ function FeesTab({ studentId, reloadKey, canCollect, onCollect, admissionNumber 
             <Link href={`/fees?search=${encodeURIComponent(admissionNumber)}`} className="text-sm font-medium text-indigo-700 hover:underline dark:text-indigo-300">
               Fee ledger
             </Link>
+            {canCollect && (
+              <Button size="sm" variant="secondary" icon={<PlusCircle className="h-3.5 w-3.5" aria-hidden />} onClick={onCharge}>
+                Add charge
+              </Button>
+            )}
             {canCollect && (
               <Button size="sm" icon={<Receipt className="h-3.5 w-3.5" aria-hidden />} onClick={onCollect}>
                 Collect fee

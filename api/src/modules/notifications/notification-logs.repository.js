@@ -120,7 +120,14 @@ export async function findLog(id) {
   return rows[0] ?? null;
 }
 
-export async function listLogs({ tenantId, branchIds, status, eventType, batchId, page, limit }) {
+/**
+ * Delivery log, newest first. Filters: status, eventType, batchId, from / to (day the message
+ * was queued, school time zone), search (phone digits; recipient / student name; admission no.).
+ */
+export async function listLogs({ tenantId, branchIds, status, eventType, batchId, from, to, search, page, limit }) {
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  const phoneDigits = search && /^[+\d\s-]{4,}$/.test(search) ? search.replace(/\D/g, '').slice(-10) : '';
+  const digits = phoneDigits.length >= 4 ? phoneDigits : null;
   const { rows } = await pool.query(
     `SELECT l.id, l.tenant_id, l.branch_id, l.batch_id, l.event_type, l.template, l.channel, l.provider,
             l.recipient_phone, l.recipient_user_id, concat_ws(' ', u.first_name, u.last_name) AS recipient_name,
@@ -130,6 +137,7 @@ export async function listLogs({ tenantId, branchIds, status, eventType, batchId
             l.sent_at, l.created_at, l.updated_at,
             count(*) OVER () AS total_count
        FROM notification_logs l
+       LEFT JOIN tenants t           ON t.id = l.tenant_id
        LEFT JOIN users u             ON u.id = l.recipient_user_id
        LEFT JOIN student_profiles sp ON sp.id = l.student_id
        LEFT JOIN users su            ON su.id = sp.user_id
@@ -138,9 +146,17 @@ export async function listLogs({ tenantId, branchIds, status, eventType, batchId
         AND ($3::notification_log_status IS NULL OR l.status = $3)
         AND ($4::text   IS NULL OR l.event_type = $4)
         AND ($5::uuid   IS NULL OR l.batch_id = $5)
+        AND ($8::date   IS NULL OR (l.created_at AT TIME ZONE COALESCE(t.timezone, 'Asia/Kolkata'))::date >= $8)
+        AND ($9::date   IS NULL OR (l.created_at AT TIME ZONE COALESCE(t.timezone, 'Asia/Kolkata'))::date <= $9)
+        AND ($10::text  IS NULL
+             OR ($11::text IS NOT NULL AND regexp_replace(l.recipient_phone, '\\D', '', 'g') LIKE '%' || $11 || '%')
+             OR concat_ws(' ', u.first_name, u.last_name) ILIKE $10
+             OR concat_ws(' ', su.first_name, su.last_name) ILIKE $10
+             OR sp.admission_number ILIKE $10)
       ORDER BY l.created_at DESC
       LIMIT $6 OFFSET $7`,
-    [tenantId, branchIds, status ?? null, eventType ?? null, batchId ?? null, limit, (page - 1) * limit],
+    [tenantId, branchIds, status ?? null, eventType ?? null, batchId ?? null, limit, (page - 1) * limit,
+      from ?? null, to ?? null, like, digits],
   );
   return rows;
 }

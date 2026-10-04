@@ -61,7 +61,9 @@ export async function issueBonafide(req, res) {
 }
 
 export async function listCertificates(req, res) {
-  res.json({ data: await service.listCertificates(req.auth, req.valid.query) });
+  const { page, limit } = req.valid.query;
+  const { rows, total } = await service.listCertificates(req.auth, req.valid.query);
+  res.json({ data: rows, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });
 }
 
 export async function certificatePdf(req, res) {

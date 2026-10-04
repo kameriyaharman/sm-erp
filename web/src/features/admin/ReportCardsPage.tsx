@@ -1,23 +1,28 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { ClassSectionFilter, FilterBar, FilterSearch, FilteredEmpty, SelectFilter, chip, useClassOptions, useUrlFilters } from '@/components/filters';
 import { FileDown, Pencil, RefreshCw, Send } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, ErrorState, Modal, Notice, Page, PageHeader, Select, Spinner, Table, Td, Textarea, Th } from '@/components/ui';
 import { qs, useApi } from '@/lib/useApi';
 import { apiSend, openPdf } from '@/lib/session';
 import { formatDateTime, titleCase } from '@/lib/format';
-import { ConfirmModal, FilterBar, ReportCardBadge, SectionSelect, errorText, fieldErrors, useClasses, useFlash } from './shared';
+import { ConfirmModal, ReportCardBadge, errorText, fieldErrors, useFlash } from './shared';
 import type { GenerateSummary, ReportCardResult, SectionReportCard, Term, Wrapped } from './types';
 
 const FINAL = 'final';
 const RESULTS: ReportCardResult[] = ['pass', 'fail', 'promoted', 'detained', 'withheld'];
 
+/** /report-cards?classId=…&sectionId=…&term=<termId|final>&status=…&result=…&search=… */
+const FILTERS = { classId: '', sectionId: '', term: '', status: '', result: '', search: '' };
+const STATUSES = ['generated', 'published'] as const;
+
 export default function ReportCardsPage() {
-  const { sections, loading: secLoading } = useClasses();
+  const cls = useClassOptions();
   const terms = useApi<Wrapped<Term[]>>('/school/terms');
   const flash = useFlash(12000);
-  const [sectionId, setSectionId] = useState('');
-  const [termKey, setTermKey] = useState('');
+  const f = useUrlFilters(FILTERS, { ignoreInCount: ['term'] });
+  const { status, result, search } = f.values;
   const [busy, setBusy] = useState<null | 'generate' | 'publish'>(null);
   const [summary, setSummary] = useState<GenerateSummary | null>(null);
   const [confirmPublish, setConfirmPublish] = useState(false);
@@ -25,26 +30,40 @@ export default function ReportCardsPage() {
   const [editing, setEditing] = useState<SectionReportCard | null>(null);
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!sectionId && sections.length) setSectionId(sections[0].id);
-  }, [sections, sectionId]);
-  useEffect(() => {
-    // Default to the term we are in (or the last one that started).
+  // Defaults (not written to the URL): the first section, and the term we are in (or the last one that started).
+  const firstSection = cls.classes.find((c) => c.sections.length)?.sections[0]?.id ?? '';
+  const sectionId = f.values.sectionId || firstSection;
+  const classId = f.values.classId || cls.section(sectionId)?.classId || '';
+  const defaultTerm = useMemo(() => {
     const list = terms.data?.data;
-    if (termKey || !list?.length) return;
+    if (!list?.length) return '';
     const today = new Date().toISOString().slice(0, 10);
-    const current = list.filter((t) => t.startDate <= today).at(-1) ?? list[0];
-    setTermKey(current.id);
-  }, [terms.data, termKey]);
+    return (list.filter((t) => t.startDate <= today).at(-1) ?? list[0]).id;
+  }, [terms.data]);
+  const termKey = f.values.term || defaultTerm;
 
   const termId = termKey && termKey !== FINAL ? termKey : undefined;
   const ready = Boolean(sectionId && termKey);
-  const cards = useApi<Wrapped<SectionReportCard[]>>(ready ? `/documents/sections/${sectionId}/report-cards${qs({ termId })}` : null);
+  const filtering = Boolean(status || result || search);
+  const cards = useApi<Wrapped<SectionReportCard[]>>(ready ? `/documents/sections/${sectionId}/report-cards${qs({ termId, status, result, search })}` : null);
+  // Generate / publish work on the whole section: count from the unfiltered list.
+  const all = useApi<Wrapped<SectionReportCard[]>>(ready && filtering ? `/documents/sections/${sectionId}/report-cards${qs({ termId })}` : null);
   const list = cards.data?.data ?? [];
-  const section = sections.find((s) => s.id === sectionId);
+  const whole = filtering ? all.data?.data ?? [] : list;
+  const sec = cls.section(sectionId);
+  const section = sec ? { label: `${sec.className} ${sec.name}` } : undefined;
   const termLabel = termKey === FINAL ? 'Annual report card' : terms.data?.data.find((t) => t.id === termKey)?.name ?? '';
-  const generatedCount = list.filter((c) => c.status === 'generated').length;
-  const publishedCount = list.filter((c) => c.status === 'published').length;
+  const generatedCount = whole.filter((c) => c.status === 'generated').length;
+  const publishedCount = whole.filter((c) => c.status === 'published').length;
+  const reloadCards = () => {
+    cards.reload();
+    if (filtering) all.reload();
+  };
+  const chips = [
+    chip('search', 'Student', search, `“${search}”`, () => f.set({ search: '' })),
+    chip('status', 'Status', status, titleCase(status), () => f.set({ status: '' })),
+    chip('result', 'Result', result, titleCase(result), () => f.set({ result: '' })),
+  ];
 
   async function generate() {
     setBusy('generate');
@@ -52,7 +71,7 @@ export default function ReportCardsPage() {
     try {
       const res = await apiSend<Wrapped<GenerateSummary>>('POST', '/documents/report-cards/generate', { sectionId, termId });
       setSummary(res.data);
-      cards.reload();
+      reloadCards();
     } catch (err) {
       flash.show('error', errorText(err));
     } finally {
@@ -67,7 +86,7 @@ export default function ReportCardsPage() {
       setConfirmPublish(false);
       flash.show('success', `Published ${res.data.published} report card${res.data.published === 1 ? '' : 's'}. Parents can now see them in the app.`);
       setSummary(null);
-      cards.reload();
+      reloadCards();
     } catch (err) {
       setPublishError(errorText(err));
     } finally {
@@ -94,7 +113,7 @@ export default function ReportCardsPage() {
           ready && (
             <>
               <Button variant="secondary" icon={<RefreshCw className="h-4 w-4" aria-hidden />} loading={busy === 'generate'} disabled={!!busy} onClick={generate}>
-                {list.length ? 'Regenerate' : 'Generate'}
+                {whole.length ? 'Regenerate' : 'Generate'}
               </Button>
               <Button
                 icon={<Send className="h-4 w-4" aria-hidden />}
@@ -145,9 +164,21 @@ export default function ReportCardsPage() {
         </div>
       )}
       <Card padded={false}>
-        <FilterBar>
-          <SectionSelect sections={sections} value={sectionId} onChange={setSectionId} placeholder={secLoading ? 'Loading…' : 'Choose a section'} />
-          <Select label="Report" value={termKey} onChange={(e) => setTermKey(e.target.value)}>
+        <FilterBar
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} label="Student" placeholder="Name, roll or admission no." />}
+          chips={chips}
+          onClear={() => f.set({ status: '', result: '', search: '' })}
+          extra={
+            whole.length > 0 ? (
+              <div className="flex items-center gap-2 pb-2 text-sm text-slate-500 dark:text-slate-400">
+                <Badge tone="green">{publishedCount} published</Badge>
+                <Badge tone="indigo">{generatedCount} to publish</Badge>
+              </div>
+            ) : undefined
+          }
+        >
+          <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} requireSection onChange={f.set} />
+          <Select label="Report" value={termKey} onChange={(e) => f.set({ term: e.target.value })} className="filter-control sm:w-60">
             {!termKey && <option value="">Choose…</option>}
             {terms.data?.data.map((t) => (
               <option key={t.id} value={t.id}>
@@ -156,12 +187,8 @@ export default function ReportCardsPage() {
             ))}
             <option value={FINAL}>Annual / final report card</option>
           </Select>
-          {list.length > 0 && (
-            <div className="flex items-center gap-2 pb-2 text-sm text-slate-500 dark:text-slate-400">
-              <Badge tone="green">{publishedCount} published</Badge>
-              <Badge tone="indigo">{generatedCount} to publish</Badge>
-            </div>
-          )}
+          <SelectFilter label="Status" name="status" value={status} allLabel="Any status" options={STATUSES.map((x) => ({ value: x, label: x === 'generated' ? 'Not published' : 'Published' }))} onChange={(v) => f.set({ status: v })} className="sm:w-36" />
+          <SelectFilter label="Result" name="result" value={result} allLabel="Any result" options={RESULTS.map((x) => ({ value: x, label: titleCase(x) }))} onChange={(v) => f.set({ result: v })} className="sm:w-36" />
         </FilterBar>
         {!ready ? (
           <EmptyState title="Choose a section and report" />
@@ -169,6 +196,8 @@ export default function ReportCardsPage() {
           <Spinner label="Loading report cards…" />
         ) : cards.error ? (
           <ErrorState message={cards.error} onRetry={cards.reload} />
+        ) : list.length === 0 && filtering ? (
+          <FilteredEmpty what="report cards" chips={chips} onClear={() => f.set({ status: '', result: '', search: '' })} />
         ) : list.length === 0 ? (
           <EmptyState
             title={`No ${termLabel.toLowerCase() || 'report cards'} for ${section?.label ?? 'this section'} yet`}
@@ -241,7 +270,7 @@ export default function ReportCardsPage() {
         onSaved={() => {
           setEditing(null);
           flash.show('success', 'Report card updated.');
-          cards.reload();
+          reloadCards();
         }}
       />
     </Page>

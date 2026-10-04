@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Copy, Lock, Plus, Sparkles, Trash2, UsersRound, Wand2 } from 'lucide-react';
+import { createHeadInline } from '@/features/fees/heads';
 import { Badge, Button, Card, cx, EmptyState, ErrorState, Input, Modal, Notice, Select, Spinner } from '@/components/ui';
 import { apiGet, apiSend } from '@/lib/session';
 import { formatInr, formatMonth, toPaise } from '@/lib/format';
@@ -63,12 +64,15 @@ export default function StructureEditor({
   classId,
   heads,
   onSaved,
+  onHeadsChanged,
   flash,
 }: {
   overview: Overview;
   classId: string;
   heads: FeeHead[];
   onSaved: () => void;
+  /** A fee head was created inline (Add fee → New fee head). */
+  onHeadsChanged?: () => void;
   flash: (tone: 'success' | 'error' | 'info' | 'warn', text: ReactNode) => void;
 }) {
   const yearId = overview.academicYear.id;
@@ -77,10 +81,10 @@ export default function StructureEditor({
   const [baseline, setBaseline] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<{ impact: Impact; rows: unknown[] } | null>(null);
-  const [applyOpen, setApplyOpen] = useState(false);
+  const [confirm, setConfirm] = useState<{ impact: Impact; rows: unknown[]; annual: string } | null>(null);
+  const [applyOpen, setApplyOpen] = useState<false | 'button' | 'after-save'>(false);
   const [copyOpen, setCopyOpen] = useState(false);
-  const [adding, setAdding] = useState('');
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     if (res.data) {
@@ -124,22 +128,6 @@ export default function StructureEditor({
     }
   }
 
-  async function addHead() {
-    const h = heads.find((x) => x.id === adding);
-    if (!h) return;
-    const frequency = h.defaultFrequency;
-    try {
-      const rows = await schedule(frequency, '0', 10, yearId);
-      setBlocks((bs) => [
-        ...bs,
-        { feeHeadId: h.id, name: h.name, code: h.code, frequency, fillAmount: '', fillDay: '10', rows: rows.map((r) => ({ installmentNo: r.installmentNo, label: r.label, dueDate: r.dueDate, amount: '', allocations: 0, invoiced: 0 })) },
-      ]);
-      setAdding('');
-    } catch (err) {
-      flash('error', errorText(err));
-    }
-  }
-
   function buildRows() {
     const e: Record<string, string> = {};
     const rows = blocks.flatMap((b, i) =>
@@ -166,13 +154,9 @@ export default function StructureEditor({
     }
     setBusy(true);
     try {
+      // Always show what the save will do first (dry run), then save on confirm.
       const dry = await save(rows, true);
-      const i = dry.impact;
-      if (i.allocationsUpdated || i.allocationsRemoved || i.invoicedUnchanged) {
-        setConfirm({ impact: i, rows });
-      } else {
-        await commit(rows);
-      }
+      setConfirm({ impact: dry.impact, rows, annual: dry.data.totals.annual });
     } catch (err) {
       const details = (err as { details?: { issues?: Array<{ message: string }> } }).details;
       flash('error', details?.issues?.[0]?.message ?? errorText(err));
@@ -195,6 +179,13 @@ export default function StructureEditor({
       setConfirm(null);
       res.reload();
       onSaved();
+      // Students of this class who do not have these fees yet: offer to apply them now.
+      try {
+        const p = await apiGet<{ data: ApplyPreview }>(`/fees/structure/apply-preview${qs({ classId, academicYearId: yearId })}`);
+        if (p.data.willChange > 0) setApplyOpen('after-save');
+      } catch {
+        /* the Apply to students button is still there */
+      }
     } catch (err) {
       flash('error', errorText(err));
     } finally {
@@ -218,10 +209,13 @@ export default function StructureEditor({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button icon={<Plus aria-hidden />} onClick={() => setAddOpen(true)} data-add-fee>
+            Add fee
+          </Button>
           <Button variant="secondary" icon={<Copy aria-hidden />} onClick={() => setCopyOpen(true)}>
             Copy from…
           </Button>
-          <Button variant="secondary" icon={<UsersRound aria-hidden />} onClick={() => setApplyOpen(true)} disabled={dirty || structure.rows.length === 0} title={dirty ? 'Save your changes first' : undefined}>
+          <Button variant="secondary" icon={<UsersRound aria-hidden />} onClick={() => setApplyOpen('button')} disabled={dirty || structure.rows.length === 0} title={dirty ? 'Save your changes first' : undefined}>
             Apply to students
           </Button>
         </div>
@@ -232,7 +226,17 @@ export default function StructureEditor({
           <EmptyState
             icon={<Sparkles aria-hidden />}
             title={`No fees set for ${structure.class.name} yet`}
-            description="Add the fee heads this class pays (tuition, annual charges, transport…), or copy the structure of another class."
+            description="Add each fee this class pays (tuition, annual charges, transport…) with its amount and due dates, or copy the structure of another class."
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button icon={<Plus aria-hidden />} onClick={() => setAddOpen(true)}>
+                  Add fee
+                </Button>
+                <Button variant="secondary" icon={<Copy aria-hidden />} onClick={() => setCopyOpen(true)}>
+                  Copy from another class
+                </Button>
+              </div>
+            }
           />
         </Card>
       )}
@@ -321,21 +325,17 @@ export default function StructureEditor({
         );
       })}
 
-      <Card padded={false}>
-        <div className="flex flex-wrap items-end gap-2 p-4 sm:px-5">
-          <Select label="Add a fee head" value={adding} onChange={(e) => setAdding(e.target.value)} className="min-w-[14rem] flex-1 sm:flex-none">
-            <option value="">{addable.length ? 'Choose a fee head…' : 'Every active fee head is added'}</option>
-            {addable.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name} ({FREQUENCY_SHORT[h.defaultFrequency]})
-              </option>
-            ))}
-          </Select>
-          <Button variant="secondary" icon={<Plus aria-hidden />} disabled={!adding} onClick={addHead}>
-            Add
-          </Button>
-        </div>
-      </Card>
+      {blocks.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line-strong px-4 py-3.5 text-sm font-medium text-slate-600 transition-colors hover:border-indigo-400 hover:bg-indigo-50/50 hover:text-indigo-800 dark:text-slate-300 dark:hover:bg-indigo-400/10 dark:hover:text-indigo-100"
+        >
+          <Plus className="h-4 w-4" aria-hidden />
+          Add another fee
+          {addable.length > 0 && <span className="font-normal text-slate-400">({addable.map((h) => h.name).slice(0, 3).join(', ')}{addable.length > 3 ? '…' : ''})</span>}
+        </button>
+      )}
 
       {byMonth.length > 0 && (
         <Card title="When parents pay" description="Total due per student, by the month it falls due">
@@ -381,44 +381,49 @@ export default function StructureEditor({
       <Modal
         open={!!confirm}
         size="sm"
-        title="Update students' dues?"
+        title={confirm && (confirm.impact.allocationsUpdated > 0 || confirm.impact.allocationsRemoved > 0) ? "Update students' dues?" : `Save ${structure.class.name} fees?`}
         onClose={busy ? () => undefined : () => setConfirm(null)}
         footer={
           <>
             <Button variant="secondary" disabled={busy} onClick={() => setConfirm(null)}>
-              Cancel
+              Back to editing
             </Button>
-            <Button loading={busy} onClick={() => confirm && commit(confirm.rows)}>
-              Save and update
+            <Button loading={busy} onClick={() => confirm && commit(confirm.rows)} data-confirm-save>
+              {confirm && (confirm.impact.allocationsUpdated > 0 || confirm.impact.allocationsRemoved > 0) ? 'Save and update' : 'Save fees'}
             </Button>
           </>
         }
       >
-        {confirm && (
-          <div className="space-y-3 text-sm">
-            <ul className="space-y-1.5">
-              {confirm.impact.allocationsUpdated > 0 && (
-                <li>
-                  <strong className="tabular-nums">{confirm.impact.allocationsUpdated}</strong> instalment{confirm.impact.allocationsUpdated === 1 ? '' : 's'} not yet invoiced, for{' '}
-                  <strong>{confirm.impact.studentsUpdated}</strong> student{confirm.impact.studentsUpdated === 1 ? '' : 's'}, change to the new amount or due date.
-                </li>
-              )}
-              {confirm.impact.allocationsRemoved > 0 && (
-                <li>
-                  <strong className="tabular-nums">{confirm.impact.allocationsRemoved}</strong> un-invoiced instalment{confirm.impact.allocationsRemoved === 1 ? '' : 's'} of removed rows will no longer be due.
-                </li>
-              )}
-            </ul>
-            {confirm.impact.invoicedUnchanged > 0 && (
-              <Notice tone="warn">
-                {confirm.impact.invoicedUnchanged} instalment{confirm.impact.invoicedUnchanged === 1 ? ' is' : 's are'} already on an invoice and stay{confirm.impact.invoicedUnchanged === 1 ? 's' : ''} exactly as billed.
-              </Notice>
-            )}
-          </div>
-        )}
+        {confirm && <ImpactSummary impact={confirm.impact} annual={confirm.annual} className={structure.class.name} />}
       </Modal>
 
-      <ApplyModal open={applyOpen} classId={classId} academicYearId={yearId} onClose={() => setApplyOpen(false)} onApplied={(text) => { setApplyOpen(false); flash('success', text); res.reload(); onSaved(); }} />
+      <ApplyModal
+        open={applyOpen !== false}
+        afterSave={applyOpen === 'after-save'}
+        classId={classId}
+        academicYearId={yearId}
+        onClose={() => setApplyOpen(false)}
+        onApplied={(text) => {
+          setApplyOpen(false);
+          flash('success', text);
+          res.reload();
+          onSaved();
+        }}
+      />
+      <AddFeeModal
+        open={addOpen}
+        className={structure.class.name}
+        yearId={yearId}
+        heads={heads}
+        used={usedHeads}
+        onClose={() => setAddOpen(false)}
+        onHeadCreated={() => onHeadsChanged?.()}
+        onAdd={(block) => {
+          setAddOpen(false);
+          setBlocks((bs) => [...bs, block]);
+          flash('info', `${block.name} added. Check the instalments, then press Save structure.`);
+        }}
+      />
       <CopyModal
         open={copyOpen}
         overview={overview}
@@ -438,7 +443,22 @@ export default function StructureEditor({
 
 // ------------------------------------------------------------------ apply to students
 
-function ApplyModal({ open, classId, academicYearId, onClose, onApplied }: { open: boolean; classId: string; academicYearId: string; onClose: () => void; onApplied: (text: string) => void }) {
+function ApplyModal({
+  open,
+  afterSave = false,
+  classId,
+  academicYearId,
+  onClose,
+  onApplied,
+}: {
+  open: boolean;
+  /** Opened right after saving: say why. */
+  afterSave?: boolean;
+  classId: string;
+  academicYearId: string;
+  onClose: () => void;
+  onApplied: (text: string) => void;
+}) {
   const preview = useApi<{ data: ApplyPreview }>(open ? `/fees/structure/apply-preview${qs({ classId, academicYearId })}` : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -467,13 +487,17 @@ function ApplyModal({ open, classId, academicYearId, onClose, onApplied }: { ope
     <Modal
       open={open}
       size="lg"
-      title={p ? `Apply ${p.class.name} fees to students` : 'Apply fees to students'}
-      description="Creates each student's instalment dues from this structure. Nothing already set up or invoiced is changed."
+      title={p ? (afterSave ? `Apply to ${p.willChange} student${p.willChange === 1 ? '' : 's'} without these fees?` : `Apply ${p.class.name} fees to students`) : 'Apply fees to students'}
+      description={
+        afterSave
+          ? `Saved. ${p ? `${p.willChange} student${p.willChange === 1 ? '' : 's'} of ${p.class.name} do${p.willChange === 1 ? 'es' : ''} not have these fees yet.` : ''} Create their instalment dues now so they show in Fee collection. Nothing already set up or invoiced is changed.`
+          : "Creates each student's instalment dues from this structure. Nothing already set up or invoiced is changed."
+      }
       onClose={busy ? () => undefined : onClose}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={busy}>
-            Cancel
+            {afterSave ? 'Not now' : 'Cancel'}
           </Button>
           <Button loading={busy} onClick={apply} disabled={!p || p.newAllocations === 0}>
             {p && p.newAllocations > 0 ? `Create dues for ${p.willChange} student${p.willChange === 1 ? '' : 's'}` : 'Nothing to apply'}
@@ -651,3 +675,264 @@ function CopyModal({
   );
 }
 
+
+// ------------------------------------------------------------------ save preview
+
+function ImpactSummary({ impact: i, annual, className }: { impact: Impact; annual: string; className: string }) {
+  const lines: ReactNode[] = [];
+  if (i.rowsAdded) lines.push(<>{i.rowsAdded} new instalment{i.rowsAdded === 1 ? '' : 's'}</>);
+  if (i.rowsChanged) lines.push(<>{i.rowsChanged} instalment{i.rowsChanged === 1 ? '' : 's'} changed</>);
+  if (i.rowsRemoved) lines.push(<>{i.rowsRemoved} instalment{i.rowsRemoved === 1 ? '' : 's'} removed</>);
+  return (
+    <div className="space-y-3 text-sm" data-impact>
+      <p>
+        {className} will pay <strong className="tabular-nums">{formatInr(annual)}</strong> a year per student.
+        {lines.length > 0 && <span className="block text-slate-500 dark:text-slate-400">{lines.map((l, k) => <span key={k}>{k > 0 ? ' · ' : ''}{l}</span>)}</span>}
+      </p>
+      <ul className="space-y-1.5">
+        {i.allocationsUpdated > 0 && (
+          <li>
+            <strong className="tabular-nums">{i.allocationsUpdated}</strong> instalment{i.allocationsUpdated === 1 ? '' : 's'} not yet invoiced, for <strong>{i.studentsUpdated}</strong> student
+            {i.studentsUpdated === 1 ? '' : 's'}, change to the new amount or due date.
+          </li>
+        )}
+        {i.allocationsRemoved > 0 && (
+          <li>
+            <strong className="tabular-nums">{i.allocationsRemoved}</strong> un-invoiced instalment{i.allocationsRemoved === 1 ? '' : 's'} of removed rows will no longer be due.
+          </li>
+        )}
+        {i.allocationsUpdated === 0 && i.allocationsRemoved === 0 && (
+          <li className="text-slate-600 dark:text-slate-300">No student&apos;s dues change. Students who do not have these fees yet can get them with Apply to students.</li>
+        )}
+      </ul>
+      {i.invoicedUnchanged > 0 && (
+        <Notice tone="warn">
+          {i.invoicedUnchanged} instalment{i.invoicedUnchanged === 1 ? ' is' : 's are'} already on an invoice and stay{i.invoicedUnchanged === 1 ? 's' : ''} exactly as billed.
+        </Notice>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ add a fee
+
+const NEW_HEAD = '__new__';
+
+interface DraftRow {
+  installmentNo: number;
+  label: string;
+  dueDate: string;
+  amount: string;
+}
+
+/**
+ * Add one fee to the class: pick a fee head (or name a new one), how often it is charged, the
+ * amount per instalment and the due day; the instalments are generated from the academic year
+ * and every due date / amount can be edited before adding. Nothing is saved until Save structure.
+ */
+function AddFeeModal({
+  open,
+  className,
+  yearId,
+  heads,
+  used,
+  onClose,
+  onAdd,
+  onHeadCreated,
+}: {
+  open: boolean;
+  className: string;
+  yearId: string;
+  heads: FeeHead[];
+  used: Set<string>;
+  onClose: () => void;
+  onAdd: (block: Block) => void;
+  onHeadCreated: () => void;
+}) {
+  const addable = heads.filter((h) => h.isActive && !used.has(h.id));
+  const [headId, setHeadId] = useState('');
+  const [newName, setNewName] = useState('');
+  const [frequency, setFrequency] = useState<Frequency>('quarterly');
+  const [amount, setAmount] = useState('');
+  const [dueDay, setDueDay] = useState('10');
+  const [rows, setRows] = useState<DraftRow[]>([]);
+  const [loadingRows, setLoadingRows] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const first = addable[0];
+    setHeadId(first ? first.id : NEW_HEAD);
+    setNewName('');
+    setFrequency(first ? first.defaultFrequency : 'quarterly');
+    setAmount('');
+    setDueDay('10');
+    setErrors({});
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Instalments for the chosen frequency / amount / day (the server knows the academic year).
+  const amountClean = clean(amount);
+  const day = Math.min(31, Math.max(1, Number(dueDay) || 10));
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setLoadingRows(true);
+    const t = setTimeout(() => {
+      schedule(frequency, RUPEES.test(amountClean) ? amountClean : '0', day, yearId)
+        .then((r) => live && setRows(r.map((x) => ({ installmentNo: x.installmentNo, label: x.label, dueDate: x.dueDate, amount: RUPEES.test(amountClean) ? String(Number(x.amount)) : '' }))))
+        .catch((err) => live && setError(errorText(err)))
+        .finally(() => live && setLoadingRows(false));
+    }, 200);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [open, frequency, amountClean, day, yearId]);
+
+  const total = rows.reduce((n, r) => n + (RUPEES.test(clean(r.amount)) ? toPaise(clean(r.amount)) : 0), 0);
+  const head = heads.find((h) => h.id === headId);
+
+  async function add() {
+    const e: Record<string, string> = {};
+    if (headId === NEW_HEAD && newName.trim().length < 2) e.name = 'Name the fee (e.g. Smart class fee)';
+    rows.forEach((r, j) => {
+      if (!RUPEES.test(clean(r.amount))) e[`${j}.amount`] = 'Amount';
+      if (!r.dueDate) e[`${j}.dueDate`] = 'Date';
+    });
+    if (rows.length === 0) e.amount = 'Enter an amount';
+    else if (!RUPEES.test(amountClean) && rows.some((r) => !RUPEES.test(clean(r.amount)))) e.amount = 'Enter the amount per instalment';
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let h = head;
+      if (headId === NEW_HEAD) {
+        h = await createHeadInline(newName, frequency);
+        onHeadCreated();
+      }
+      if (!h) return;
+      onAdd({
+        feeHeadId: h.id,
+        name: h.name,
+        code: h.code,
+        frequency,
+        fillAmount: '',
+        fillDay: String(day),
+        rows: rows.map((r) => ({ installmentNo: r.installmentNo, label: r.label, dueDate: r.dueDate, amount: clean(r.amount), allocations: 0, invoiced: 0 })),
+      });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      size="lg"
+      title={`Add a fee to ${className}`}
+      description="Choose the fee, how often it is charged and how much; the instalments and due dates fill in for the whole academic year. You can change any date or amount."
+      onClose={busy ? () => undefined : onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button loading={busy} onClick={add} disabled={loadingRows && rows.length === 0} data-add-fee-submit>
+            Add to {className}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select
+            label="Fee head"
+            value={headId}
+            onChange={(e) => {
+              setHeadId(e.target.value);
+              const h = heads.find((x) => x.id === e.target.value);
+              if (h) setFrequency(h.defaultFrequency);
+            }}
+          >
+            {addable.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name} ({FREQUENCY_SHORT[h.defaultFrequency]})
+              </option>
+            ))}
+            <option value={NEW_HEAD}>+ New fee head…</option>
+          </Select>
+          {headId === NEW_HEAD ? (
+            <Input label="Name of the new fee" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Smart class fee" maxLength={100} error={errors.name} />
+          ) : (
+            <Select label="Charged" value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)}>
+              {FREQUENCIES.map((f) => (
+                <option key={f} value={f}>
+                  {FREQUENCY_LABEL[f]}
+                </option>
+              ))}
+            </Select>
+          )}
+          {headId === NEW_HEAD && (
+            <Select label="Charged" value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)}>
+              {FREQUENCIES.map((f) => (
+                <option key={f} value={f}>
+                  {FREQUENCY_LABEL[f]}
+                </option>
+              ))}
+            </Select>
+          )}
+          <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-3 sm:col-span-1">
+            <Input label="₹ per instalment" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 4500" error={errors.amount} autoFocus />
+            <Input label="Due on day" inputMode="numeric" value={dueDay} onChange={(e) => setDueDay(e.target.value.replace(/\D/g, '').slice(0, 2))} />
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-line">
+          <div className="flex items-center justify-between gap-3 border-b border-line bg-surface-muted px-3 py-2 text-13">
+            <span className="font-medium">
+              {rows.length} instalment{rows.length === 1 ? '' : 's'} · {FREQUENCY_SHORT[frequency].toLowerCase()}
+            </span>
+            <span className="tabular-nums text-slate-600 dark:text-slate-300">
+              Total a year <strong className="text-slate-900 dark:text-white">{formatInr(total / 100)}</strong>
+            </span>
+          </div>
+          {loadingRows && rows.length === 0 ? (
+            <Spinner label="Working out the due dates…" />
+          ) : (
+            <ul className={cx('max-h-[40vh] divide-y divide-line overflow-y-auto', loadingRows && 'opacity-60')}>
+              {rows.map((r, j) => (
+                <li key={r.installmentNo} className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-3 py-2 sm:grid-cols-[2rem_minmax(0,1fr)_10rem_8rem]">
+                  <span className="text-xs font-medium text-slate-500">#{r.installmentNo}</span>
+                  <span className="col-span-2 truncate text-sm sm:col-span-1">{r.label}</span>
+                  <Input
+                    aria-label={`Instalment ${r.installmentNo} due date`}
+                    type="date"
+                    value={r.dueDate}
+                    onChange={(e) => setRows((rs) => rs.map((x, k) => (k === j ? { ...x, dueDate: e.target.value } : x)))}
+                    className={cx('col-start-2 sm:col-start-auto', errors[`${j}.dueDate`] && 'border-red-500')}
+                  />
+                  <Input
+                    aria-label={`Instalment ${r.installmentNo} amount`}
+                    inputMode="decimal"
+                    value={r.amount}
+                    placeholder="₹"
+                    onChange={(e) => setRows((rs) => rs.map((x, k) => (k === j ? { ...x, amount: e.target.value } : x)))}
+                    className={cx('text-right tabular-nums', errors[`${j}.amount`] && 'border-red-500')}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {error && <Notice tone="error">{error}</Notice>}
+      </div>
+    </Modal>
+  );
+}

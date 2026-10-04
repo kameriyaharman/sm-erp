@@ -1,7 +1,7 @@
 import * as service from './notices.service.js';
 
 export async function listNotices(req, res) {
-  res.set('Cache-Control', 'private, no-store').json({ data: await service.listNotices(req.auth, req.valid.query) });
+  res.set('Cache-Control', 'private, no-store').json(await service.listNotices(req.auth, req.valid.query));
 }
 
 export async function createNotice(req, res) {

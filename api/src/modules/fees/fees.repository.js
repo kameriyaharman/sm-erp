@@ -234,12 +234,12 @@ export async function insertInvoice(db, invoice) {
   const { rows } = await db.query(
     `INSERT INTO fee_invoices
             (tenant_id, branch_id, student_id, academic_year_id, invoice_number,
-             period_label, issue_date, due_date, generated_by, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, LEAST(CURRENT_DATE, $7::date), $7, $8, $9)
+             period_label, issue_date, due_date, generated_by, notes, charge_batch_id)
+     VALUES ($1, $2, $3, $4, $5, $6, LEAST(CURRENT_DATE, $7::date), $7, $8, $9, $10)
      RETURNING id`,
     [
       invoice.tenantId, invoice.branchId, invoice.studentId, invoice.academicYearId, invoice.invoiceNumber,
-      invoice.periodLabel ?? null, invoice.dueDate, invoice.generatedBy, invoice.notes ?? null,
+      invoice.periodLabel ?? null, invoice.dueDate, invoice.generatedBy, invoice.notes ?? null, invoice.chargeBatchId ?? null,
     ],
   );
   return rows[0].id;

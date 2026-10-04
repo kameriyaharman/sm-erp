@@ -51,22 +51,34 @@ export const rangeQuery = z
   .refine((q) => q.from <= q.to, { message: '"from" must be on or before "to"', path: ['to'] })
   .refine((q) => span(q.from, q.to) <= 366, { message: 'Choose at most one year', path: ['to'] });
 
+/** Filters of the entries list (GET /ledger) and its CSV (GET /ledger/entries.csv). */
+const ledgerFilters = {
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  direction: z.enum(['in', 'out']).optional(),
+  category: z.enum(ALL_CATEGORIES).optional(),
+  accountId: uuid.optional(),
+  source: z.enum(SOURCES).optional(),
+  paymentMode: z.enum(LEDGER_MODES).optional(),
+  // Fee entries of students now in this class / section (other entries have no student and drop out).
+  classId: uuid.optional(),
+  sectionId: uuid.optional(),
+  search: z.string().trim().min(1).max(100).optional(),
+  includeDeleted: bool.default(false),
+  branchId: uuid.optional(),
+};
+const fromBeforeTo = [(q) => !q.from || !q.to || q.from <= q.to, { message: '"from" must be on or before "to"', path: ['to'] }];
+
 export const ledgerQuery = z
-  .object({
-    from: isoDate.optional(),
-    to: isoDate.optional(),
-    direction: z.enum(['in', 'out']).optional(),
-    category: z.enum(ALL_CATEGORIES).optional(),
-    accountId: uuid.optional(),
-    source: z.enum(SOURCES).optional(),
-    search: z.string().trim().min(1).max(100).optional(),
-    includeDeleted: bool.default(false),
-    branchId: uuid.optional(),
-    page,
-    limit: limit(50, 200),
-  })
+  .object({ ...ledgerFilters, page, limit: limit(50, 200) })
   .strict()
-  .refine((q) => !q.from || !q.to || q.from <= q.to, { message: '"from" must be on or before "to"', path: ['to'] });
+  .refine(...fromBeforeTo);
+
+export const ledgerExportQuery = z
+  .object(ledgerFilters)
+  .strict()
+  .refine(...fromBeforeTo)
+  .refine((q) => !q.from || !q.to || span(q.from, q.to) <= 366, { message: 'Export at most one year at a time', path: ['to'] });
 
 export const exportQuery = z
   .object({

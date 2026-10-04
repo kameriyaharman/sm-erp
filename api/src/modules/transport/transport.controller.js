@@ -13,9 +13,13 @@ export async function updateRoute(req, res) {
 }
 
 export async function listRouteStudents(req, res) {
-  res.json({ data: await service.listRouteStudents(req.auth, req.valid.params.id) });
+  res.json({ data: await service.listRouteStudents(req.auth, req.valid.params.id, req.valid.query) });
 }
 
 export async function assignStudent(req, res) {
   res.json({ data: await service.assignStudent(req.auth, req.valid.body) });
+}
+
+export async function listRiders(req, res) {
+  res.json(await service.listRiders(req.auth, req.valid.query));
 }

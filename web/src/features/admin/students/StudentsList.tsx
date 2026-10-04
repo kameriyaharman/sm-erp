@@ -1,43 +1,79 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, UserPlus } from 'lucide-react';
-import { buttonClass, Card, controlClass, cx, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Spinner, Table, Td, Th } from '@/components/ui';
+import { UserPlus } from 'lucide-react';
+import { buttonClass, Card, EmptyState, ErrorState, Page, PageHeader, Pagination, Spinner, Table, Td, Th } from '@/components/ui';
+import { ClassSectionFilter, FilterBar, FilterSearch, FilteredEmpty, SelectFilter, chip, classSectionChips, useClassOptions, useUrlFilters } from '@/components/filters';
 import { qs, useApi } from '@/lib/useApi';
 import { formatDate, titleCase } from '@/lib/format';
-import { Avatar, FilterBar, PhoneLink, StudentStatusBadge, useClasses, useDebounced } from '../shared';
+import { Avatar, PhoneLink, StudentStatusBadge } from '../shared';
 import type { Paged, StudentRow } from '../types';
+
+const STATUSES = [
+  { value: 'active', label: 'Current students' },
+  { value: 'left', label: 'Left the school' },
+  { value: 'all', label: 'All' },
+];
+const GENDERS = [
+  { value: 'female', label: 'Girls' },
+  { value: 'male', label: 'Boys' },
+  { value: 'other', label: 'Other' },
+];
+const TRANSPORT = [
+  { value: 'yes', label: 'Uses school bus' },
+  { value: 'no', label: 'No school bus' },
+];
+const SORTS = [
+  { value: 'name', label: 'Name' },
+  { value: 'admission', label: 'Admission no.' },
+  { value: 'class', label: 'Class' },
+];
+
+/** /students?search=…&classId=…&sectionId=…&status=left&gender=female&transport=yes&sort=class */
+const DEFAULTS = { search: '', classId: '', sectionId: '', status: 'active', gender: '', transport: '', sort: 'name' };
+const label = (list: Array<{ value: string; label: string }>, v: string) => list.find((o) => o.value === v)?.label ?? v;
 
 export default function StudentsList() {
   const router = useRouter();
   const params = useSearchParams();
-  const { classes, sections } = useClasses();
-  const [search, setSearch] = useState('');
-  const q = useDebounced(search.trim());
-  const [classId, setClassId] = useState('');
-  const [sectionId, setSectionId] = useState('');
-  const [status, setStatus] = useState<'active' | 'left' | 'all'>('active');
-  const [sort, setSort] = useState<'name' | 'admission' | 'class'>('name');
-  const [page, setPage] = useState(1);
+  const f = useUrlFilters(DEFAULTS);
+  const cls = useClassOptions();
+  const { search, classId, sectionId, gender, transport } = f.values;
+  const status = STATUSES.some((o) => o.value === f.values.status) ? f.values.status : 'active';
+  const sort = SORTS.some((o) => o.value === f.values.sort) ? f.values.sort : 'name';
 
   // Old links (dashboard quick action) open the admission page.
   useEffect(() => {
     if (params.get('new') === '1') router.replace('/students/new');
   }, [params, router]);
-  useEffect(() => setPage(1), [q, classId, sectionId, status, sort]);
 
-  const path = `/students${qs({ search: q.length ? q : undefined, classId, sectionId, status, sort, page, limit: 25 })}`;
+  const path = `/students${qs({ search, classId, sectionId, status, gender, transport, sort, page: f.page, limit: 25 })}`;
   const { data, error, loading, reload } = useApi<Paged<StudentRow>>(path);
-  const classSections = useMemo(() => sections.filter((s) => s.classId === classId), [sections, classId]);
-  const filtered = Boolean(q || classId || sectionId || status !== 'active');
+  const chips = [
+    chip('search', 'Search', search, `“${search}”`, () => f.set({ search: '' })),
+    ...classSectionChips(cls, f.values, f.set),
+    chip('status', 'Status', status, label(STATUSES, status), () => f.set({ status: 'active' }), status === 'active'),
+    chip('gender', 'Gender', gender, label(GENDERS, gender), () => f.set({ gender: '' })),
+    chip('transport', 'Transport', transport, label(TRANSPORT, transport), () => f.set({ transport: '' })),
+  ];
+  const filtered = chips.some(Boolean);
 
   return (
     <Page wide>
       <PageHeader
         title="Students"
-        description={data ? `${data.meta.total.toLocaleString('en-IN')} ${status === 'left' ? 'former' : ''} students${filtered ? ' match the filters' : ''}` : 'Admissions, profiles and records'}
+        description={
+          data ? (
+            <span data-result-count={data.meta.total}>
+              {data.meta.total.toLocaleString('en-IN')} {status === 'left' ? 'former ' : ''}student{data.meta.total === 1 ? '' : 's'}
+              {filtered ? ' match the filters' : ''}
+            </span>
+          ) : (
+            'Admissions, profiles and records'
+          )
+        }
         actions={
           <Link href="/students/new" className={buttonClass()}>
             <UserPlus className="h-4 w-4" aria-hidden />
@@ -46,51 +82,16 @@ export default function StudentsList() {
         }
       />
       <Card padded={false}>
-        <FilterBar>
-          <label className="relative block sm:w-72">
-            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Search</span>
-            <Search className="pointer-events-none absolute bottom-2.5 left-3 h-4 w-4 text-slate-400" aria-hidden />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, admission no., roll, phone"
-              className={cx(controlClass, 'h-10 pl-9 sm:h-9')}
-            />
-          </label>
-          <Select
-            label="Class"
-            value={classId}
-            onChange={(e) => {
-              setClassId(e.target.value);
-              setSectionId('');
-            }}
-          >
-            <option value="">All classes</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Section" value={sectionId} onChange={(e) => setSectionId(e.target.value)} disabled={!classId}>
-            <option value="">All sections</option>
-            {classSections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-            <option value="active">Current students</option>
-            <option value="left">Left the school</option>
-            <option value="all">All</option>
-          </Select>
-          <Select label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
-            <option value="name">Name</option>
-            <option value="admission">Admission no.</option>
-            <option value="class">Class</option>
-          </Select>
+        <FilterBar
+          search={<FilterSearch value={search} onChange={(v) => f.set({ search: v })} placeholder="Name, admission no., roll, phone" />}
+          chips={chips}
+          onClear={f.clear}
+          extra={<SelectFilter label="Sort by" name="sort" value={sort} options={SORTS} onChange={(v) => f.set({ sort: v })} />}
+        >
+          <ClassSectionFilter options={cls} classId={classId} sectionId={sectionId} onChange={f.set} />
+          <SelectFilter label="Status" name="status" value={status} options={STATUSES} onChange={(v) => f.set({ status: v })} />
+          <SelectFilter label="Gender" name="gender" value={gender} allLabel="All" options={GENDERS} onChange={(v) => f.set({ gender: v })} className="sm:w-32" />
+          <SelectFilter label="Transport" name="transport" value={transport} allLabel="All" options={TRANSPORT} onChange={(v) => f.set({ transport: v })} />
         </FilterBar>
 
         {loading && !data ? (
@@ -98,17 +99,19 @@ export default function StudentsList() {
         ) : error ? (
           <ErrorState message={error} onRetry={reload} />
         ) : !data?.data.length ? (
-          <EmptyState
-            title={filtered ? 'No students match these filters' : 'No students yet'}
-            description={filtered ? 'Try a different name or clear the filters.' : 'Admit your first student to get started.'}
-            action={
-              !filtered && (
+          filtered ? (
+            <FilteredEmpty what="students" chips={chips} onClear={f.clear} />
+          ) : (
+            <EmptyState
+              title="No students yet"
+              description="Admit your first student to get started."
+              action={
                 <Link href="/students/new" className={buttonClass()}>
                   New admission
                 </Link>
-              )
-            }
-          />
+              }
+            />
+          )
         ) : (
           <div className={loading ? 'opacity-60 transition-opacity' : undefined}>
             <Table>
@@ -160,7 +163,7 @@ export default function StudentsList() {
                 ))}
               </tbody>
             </Table>
-            <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={setPage} />
+            <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={f.setPage} />
           </div>
         )}
       </Card>

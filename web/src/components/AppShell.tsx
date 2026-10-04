@@ -73,9 +73,9 @@ export const NAV: NavGroup[] = [
     label: 'Finance',
     items: [
       { href: '/fees', label: 'Fee collection', icon: Receipt, roles: ADMINS },
+      { href: '/fees/setup', label: 'Fee structure', icon: Layers, roles: ADMINS },
       { href: '/fees/defaulters', label: 'Defaulters', icon: TriangleAlert, roles: ADMINS },
       { href: '/fees/online-payments', label: 'Online payments', icon: CreditCard, roles: ADMINS },
-      { href: '/fees/setup', label: 'Fee structure', icon: Layers, roles: ADMINS },
       { href: '/accounts', label: 'Day book', icon: BookText, roles: ADMINS },
       { href: '/expenses', label: 'Expenses', icon: Wallet, roles: ADMINS },
     ],

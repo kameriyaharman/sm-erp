@@ -1,7 +1,19 @@
 import { z } from 'zod';
-import { text, uuid } from '../shared/schemas.js';
+import { isoDate, text, uuid } from '../shared/schemas.js';
 
-export const listQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) }).strict();
+export const listQuery = z
+  .object({
+    audience: z.enum(['all', 'parents', 'teachers']).optional(),
+    classId: uuid.optional(),                       // notices for this class only
+    pinned: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+    from: isoDate.optional(),                       // posted on or after (school time zone)
+    to: isoDate.optional(),
+    search: z.string().trim().min(1).max(100).optional(),   // title or text
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .strict()
+  .refine((q) => !q.from || !q.to || q.from <= q.to, { message: '"from" must be on or before "to"', path: ['to'] });
 
 export const createBody = z
   .object({

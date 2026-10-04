@@ -13,7 +13,8 @@ const SORTS = {
  * Money columns are returned as strings to keep numeric(12,2) precision.
  */
 export async function listDefaulters({ scope, filters }) {
-  const { asOf, minDaysOverdue, minAmount, classId, sectionId, sort, page, limit } = filters;
+  const { asOf, minDaysOverdue, minAmount, classId, sectionId, search, sort, page, limit } = filters;
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
 
   const params = [
     scope.tenantId,       // $1
@@ -25,6 +26,7 @@ export async function listDefaulters({ scope, filters }) {
     sectionId ?? null,    // $7
     limit,                // $8
     (page - 1) * limit,   // $9
+    like,                 // $10
   ];
 
   const { rows } = await query(
@@ -73,6 +75,9 @@ export async function listDefaulters({ scope, filters }) {
        LEFT JOIN users pu       ON pu.id = sp.parent_id
       WHERE ($6::uuid IS NULL OR sp.class_id = $6)
         AND ($7::uuid IS NULL OR sp.section_id = $7)
+        AND ($10::text IS NULL
+             OR concat_ws(' ', u.first_name, u.last_name) ILIKE $10 OR sp.admission_number ILIKE $10
+             OR concat_ws(' ', pu.first_name, pu.last_name) ILIKE $10 OR pu.phone ILIKE $10)
       ORDER BY ${SORTS[sort]}
       LIMIT $8 OFFSET $9`,
     params,

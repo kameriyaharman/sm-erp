@@ -1,7 +1,7 @@
 import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
 import { logger } from '../../utils/logger.js';
-import { assertStaffAccess, conflict, resolveWriteBranch, staffScope, unprocessable } from '../shared/access.js';
+import { assertStaffAccess, conflict, pageMeta, resolveWriteBranch, staffScope, unprocessable } from '../shared/access.js';
 import * as repo from './transport.repository.js';
 
 function mapRoute(r, stops) {
@@ -82,9 +82,26 @@ export async function updateRoute(auth, id, patch) {
   return routeWithStops(pool, id);
 }
 
-export async function listRouteStudents(auth, id) {
+export async function listRiders(auth, { branchId, ...filters }) {
+  const rows = await repo.listRiders(await staffScope(auth, { branchId }), filters);
+  const total = rows.length ? Number(rows[0].total_count) : 0;
+  return {
+    data: rows.map((r) => ({
+      studentId: r.student_id,
+      name: r.name,
+      admissionNumber: r.admission_number,
+      classLabel: r.class_label,
+      route: { id: r.route_id, name: r.route_name, vehicleNumber: r.vehicle_number },
+      stop: { id: r.stop_id, name: r.stop_name, pickupTime: r.pickup_time, dropTime: r.drop_time },
+      parent: r.parent_name ? { name: r.parent_name, phone: r.parent_phone } : null,
+    })),
+    meta: pageMeta(filters, total),
+  };
+}
+
+export async function listRouteStudents(auth, id, filters = {}) {
   await loadRoute(pool, auth, id);
-  const rows = await repo.routeStudents(pool, id);
+  const rows = await repo.routeStudents(pool, id, filters);
   return rows.map((r) => ({
     studentId: r.student_id,
     name: r.name,

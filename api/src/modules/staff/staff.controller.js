@@ -1,7 +1,7 @@
 import * as service from './staff.service.js';
 
 export async function listStaff(req, res) {
-  res.json({ data: await service.listStaff(req.auth, req.valid.query) });
+  res.json(await service.listStaff(req.auth, req.valid.query));
 }
 
 export async function createStaff(req, res) {

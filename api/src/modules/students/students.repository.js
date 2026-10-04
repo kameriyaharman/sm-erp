@@ -16,7 +16,7 @@ const STATUS_FILTERS = {
 
 /** sectionIds (array) limits to those sections (teachers); null = no limit. */
 export async function listStudents({ scope, filters, like, sectionIds = null }) {
-  const { classId, sectionId, status, sort, page, limit } = filters;
+  const { classId, sectionId, status, sort, page, limit, gender, transport } = filters;
   const { rows } = await query(
     `SELECT sp.id, u.first_name, u.last_name, concat_ws(' ', u.first_name, u.last_name) AS name,
             sp.admission_number, sp.roll_number, sp.gender, sp.date_of_birth, sp.admission_date, sp.status,
@@ -40,9 +40,15 @@ export async function listStudents({ scope, filters, like, sectionIds = null }) 
              OR sp.roll_number ILIKE $5
              OR pu.phone ILIKE $5)
         AND ($8::uuid[] IS NULL OR sp.section_id = ANY ($8))
+        AND ($9::gender_type IS NULL OR sp.gender = $9)
+        AND ($10::text IS NULL
+             OR ($10 = 'yes') = EXISTS (SELECT 1 FROM student_transport x
+                                       JOIN transport_routes r ON r.id = x.route_id AND r.deleted_at IS NULL
+                                      WHERE x.student_id = sp.id))
       ORDER BY ${SORTS[sort]}
       LIMIT $6 OFFSET $7`,
-    [scope.tenantId, scope.branchIds, classId ?? null, sectionId ?? null, like, limit, (page - 1) * limit, sectionIds],
+    [scope.tenantId, scope.branchIds, classId ?? null, sectionId ?? null, like, limit, (page - 1) * limit, sectionIds,
+      gender ?? null, transport ?? null],
   );
   return rows;
 }

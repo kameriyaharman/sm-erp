@@ -50,3 +50,13 @@ export async function exportCsv(req, res) {
   });
   res.send(body);
 }
+
+export async function exportLedgerCsv(req, res) {
+  const { filename, body } = await service.exportLedgerCsv(req.auth, req.valid.query);
+  res.set({
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Cache-Control': 'private, no-store',
+  });
+  res.send(body);
+}

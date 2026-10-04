@@ -230,7 +230,8 @@ export async function listReportCardsForStudent(db, studentId, { publishedOnly }
 }
 
 /** Report cards of one section for a term (termId null = annual / final cards), in roll order. */
-export async function listSectionReportCards(db, { sectionId, academicYearId, termId }) {
+export async function listSectionReportCards(db, { sectionId, academicYearId, termId, status = null, result = null, search = null }) {
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   const { rows } = await db.query(
     `SELECT rc.id, rc.student_id, concat_ws(' ', u.first_name, u.last_name) AS name, sp.roll_number, rc.status,
             rc.percentage::float8 AS percentage, rc.overall_grade, rc.rank_in_section, rc.result, rc.teacher_remarks, rc.published_at
@@ -238,8 +239,11 @@ export async function listSectionReportCards(db, { sectionId, academicYearId, te
        JOIN student_profiles sp ON sp.id = rc.student_id
        JOIN users u             ON u.id = sp.user_id
       WHERE rc.section_id = $1 AND rc.academic_year_id = $2 AND rc.term_id IS NOT DISTINCT FROM $3
+        AND ($4::text IS NULL OR rc.status::text = $4)
+        AND ($5::text IS NULL OR rc.result::text = $5)
+        AND ($6::text IS NULL OR concat_ws(' ', u.first_name, u.last_name) ILIKE $6 OR sp.roll_number ILIKE $6 OR sp.admission_number ILIKE $6)
       ORDER BY NULLIF(regexp_replace(sp.roll_number, '\\D', '', 'g'), '')::int NULLS LAST, name`,
-    [sectionId, academicYearId, termId],
+    [sectionId, academicYearId, termId, status, result, like],
   );
   return rows;
 }
@@ -376,17 +380,32 @@ export async function cancelCertificate(db, id, { userId, reason }) {
   );
 }
 
-export async function listCertificates(db, { scope, studentId, type, limit = 50 }) {
+export async function listCertificates(db, { scope, studentId, type, status, from, to, classId, sectionId, search, page = 1, limit = 50 }) {
+  const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   const { rows } = await db.query(
     `SELECT c.id, c.certificate_type, c.certificate_number, c.status, c.issued_at, c.print_count, c.student_id,
-            c.content->'student'->>'name' AS student_name, c.content->'student'->>'admissionNumber' AS admission_number
+            c.content->'student'->>'name' AS student_name, c.content->'student'->>'admissionNumber' AS admission_number,
+            NULLIF(concat_ws(' ', cl.name, sec.name), '') AS class_label,
+            count(*) OVER () AS total_count
        FROM certificates c
+       JOIN tenants t ON t.id = c.tenant_id
+       LEFT JOIN student_profiles sp ON sp.id = c.student_id
+       LEFT JOIN classes cl  ON cl.id = sp.class_id
+       LEFT JOIN sections sec ON sec.id = sp.section_id
       WHERE ($1::uuid IS NULL OR c.tenant_id = $1)
         AND ($2::uuid[] IS NULL OR c.branch_id = ANY ($2))
         AND ($3::uuid IS NULL OR c.student_id = $3)
         AND ($4::certificate_type IS NULL OR c.certificate_type = $4)
-      ORDER BY c.issued_at DESC LIMIT $5`,
-    [scope.tenantId, scope.branchIds, studentId ?? null, type ?? null, limit],
+        AND ($7::certificate_status IS NULL OR c.status = $7)
+        AND ($8::date IS NULL OR (c.issued_at AT TIME ZONE t.timezone)::date >= $8)
+        AND ($9::date IS NULL OR (c.issued_at AT TIME ZONE t.timezone)::date <= $9)
+        AND ($10::uuid IS NULL OR sp.class_id = $10)
+        AND ($11::uuid IS NULL OR sp.section_id = $11)
+        AND ($12::text IS NULL OR c.content->'student'->>'name' ILIKE $12 OR c.content->'student'->>'admissionNumber' ILIKE $12
+             OR c.certificate_number ILIKE $12)
+      ORDER BY c.issued_at DESC LIMIT $5 OFFSET $6`,
+    [scope.tenantId, scope.branchIds, studentId ?? null, type ?? null, limit, (page - 1) * limit,
+      status ?? null, from ?? null, to ?? null, classId ?? null, sectionId ?? null, like],
   );
   return rows;
 }

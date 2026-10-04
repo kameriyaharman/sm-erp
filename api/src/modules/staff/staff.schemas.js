@@ -1,7 +1,17 @@
 import { z } from 'zod';
 import { isoDate, optionalText, text, uuid } from '../shared/schemas.js';
 
-export const listQuery = z.object({ branchId: uuid.optional() }).strict();
+export const listQuery = z
+  .object({
+    role: z.enum(['teacher', 'branch_admin', 'super_admin']).optional(),
+    status: z.enum(['active', 'inactive']).optional(),
+    subjectId: uuid.optional(),     // teaches this subject (current year)
+    classId: uuid.optional(),       // teaches in, or is class teacher of, a section of this class (current year)
+    sectionId: uuid.optional(),     // ... of this section
+    search: z.string().trim().min(1).max(100).optional(),   // name, email, phone, designation, department, employee code
+    branchId: uuid.optional(),
+  })
+  .strict();
 
 export const createBody = z
   .object({

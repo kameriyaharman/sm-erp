@@ -24,6 +24,9 @@ router.get('/students/:studentId/dues', validate({ params: schemas.studentParams
 router.post('/invoices', validate({ body: schemas.createInvoiceBody }), controller.createInvoice);
 router.get('/invoices/:invoiceId', validate({ params: schemas.invoiceParams }), controller.getInvoice);
 
+// One-off charge ("extra fee") for one student or a whole class / section: one invoice each.
+router.post('/charges', validate({ body: schemas.chargeBody }), controller.createCharges);
+
 // Counter payment -> receipt. Requires an Idempotency-Key header.
 router.post(
   '/payments',

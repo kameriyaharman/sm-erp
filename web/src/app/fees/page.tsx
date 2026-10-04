@@ -1,30 +1,66 @@
 'use client';
 
-import { Suspense, useMemo } from 'react';
+import { Suspense, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { Layers, PlusCircle } from 'lucide-react';
 import FeeCollectionTable from '@/features/fees/FeeCollectionTable';
-import { createFeesApi, type ListStudentsParams } from '@/features/fees/api';
+import FeesNav from '@/features/fees/FeesNav';
+import AddChargeModal from '@/features/fees/AddChargeModal';
+import { createFeesApi } from '@/features/fees/api';
 import RequireAuth from '@/components/RequireAuth';
-import { Page, PageHeader, Spinner } from '@/components/ui';
+import { Button, Page, PageHeader, Spinner, buttonClass } from '@/components/ui';
+import { formatInr } from '@/lib/format';
 import { API_BASE, getAccessToken } from '@/lib/session';
-
-const STATUSES = ['all', 'pending', 'overdue', 'paid'] as const;
-type Status = NonNullable<ListStudentsParams['status']>;
+import { useFlash } from '@/features/admin/shared';
 
 function Fees() {
-  const params = useSearchParams();
   const api = useMemo(
     () => createFeesApi({ baseUrl: API_BASE, getAccessToken, onUnauthorized: () => window.location.assign('/login?next=/fees') }),
     [],
   );
-  // Links from other screens: /fees?search=DPS-1015 or /fees?status=overdue
-  const search = params.get('search') ?? '';
-  const rawStatus = params.get('status');
-  const status: Status = (STATUSES as readonly string[]).includes(rawStatus ?? '') ? (rawStatus as Status) : 'all';
+  const params = useSearchParams();
+  const flash = useFlash(9000);
+  const [charging, setCharging] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  // Filters live in the URL, so other screens link straight to a view:
+  // /fees?search=DPS-1015, /fees?status=overdue, /fees?classId=…&sectionId=…
   return (
-    <Page>
-      <PageHeader title="Fee collection" description="Collect fees at the counter, print receipts and see what is still pending." />
-      <FeeCollectionTable key={`${search}|${status}`} api={api} initialSearch={search} initialStatus={status} />
+    <Page wide>
+      <FeesNav />
+      <PageHeader
+        title="Fee collection"
+        description="Collect fees at the counter, print receipts and see what is still pending."
+        actions={
+          <>
+            <Link href="/fees/setup" className={buttonClass({ variant: 'secondary' })}>
+              <Layers className="h-4 w-4" aria-hidden />
+              Set class fees
+            </Link>
+            <Button icon={<PlusCircle aria-hidden />} onClick={() => setCharging(true)}>
+              Add charge
+            </Button>
+          </>
+        }
+      />
+      {flash.node}
+      <FeeCollectionTable api={api} refreshKey={refreshKey} />
+      <AddChargeModal
+        open={charging}
+        defaultClassId={params.get('classId') ?? ''}
+        defaultSectionId={params.get('sectionId') ?? ''}
+        onClose={() => setCharging(false)}
+        onDone={(r) => {
+          setCharging(false);
+          setRefreshKey((k) => k + 1);
+          flash.show(
+            'success',
+            r.invoicesCreated > 0
+              ? `Charged ${formatInr(r.amount)} “${r.description}” to ${r.invoicesCreated === 1 && r.target.studentId ? r.target.label : `${r.invoicesCreated} student${r.invoicesCreated === 1 ? '' : 's'} of ${r.target.label}`}: ${formatInr(r.total)} in all.${r.alreadyCharged ? ` ${r.alreadyCharged} already had it.` : ''}`
+              : 'Everyone selected already had this charge. Nothing new was billed.',
+          );
+        }}
+      />
     </Page>
   );
 }

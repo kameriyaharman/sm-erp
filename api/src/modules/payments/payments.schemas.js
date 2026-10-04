@@ -71,6 +71,8 @@ export const onlinePaymentsQuery = z
     from: isoDate.optional(),
     to: isoDate.optional(),
     search: z.string().trim().max(100).optional(),
+    classId: uuid.optional(),
+    sectionId: uuid.optional(),
     branchId: uuid.optional(),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(25),
