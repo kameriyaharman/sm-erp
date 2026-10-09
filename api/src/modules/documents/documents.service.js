@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { notifyReportCardsPublished } from '../notifications/events.js';
 import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
 import { ROLES } from '../../config/roles.js';
@@ -231,6 +232,7 @@ export async function publishReportCards(auth, { sectionId, termId }) {
     return repo.publishReportCards(db, { ids, codes: ids.map(() => newVerificationCode()), userId: auth.userId });
   });
   if (published === 0) throw unprocessable('NOTHING_TO_PUBLISH', 'There are no generated report cards to publish for this section. Generate them first.');
+  notifyReportCardsPublished({ tenantId: ctx.tenant_id, sectionId, termId: termId ?? null, publishedBy: auth.userId });
   return { published };
 }
 

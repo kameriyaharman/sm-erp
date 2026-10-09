@@ -11,6 +11,7 @@ import { accessLog } from './middleware/accessLog.js';
 import { apiLimiter } from './middleware/rateLimit.js';
 import { redisReady } from './cache/redis.js';
 import apiRoutes from './routes.js';
+import { admsRouter } from './modules/devices/devices.routes.js';
 
 export function createApp() {
   const app = express();
@@ -55,6 +56,8 @@ export function createApp() {
   app.get('/health', ready);
 
   app.use('/api/v1', apiLimiter, apiRoutes);
+  // ZKTeco / eSSL biometric and face terminals push punches here (ADMS protocol, fixed path).
+  app.use('/iclock', apiLimiter, admsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

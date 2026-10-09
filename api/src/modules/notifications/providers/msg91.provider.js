@@ -41,9 +41,10 @@ export class Msg91Provider {
     if (channel !== 'sms') {
       throw new NotificationError('CHANNEL_NOT_SUPPORTED', `${this.name} provider only sends SMS`, { provider: this.name, tryNextChannel: true });
     }
-    const flowId = this.flowIds[template];
+    // A school's own template (Settings -> Message templates) carries its flow / DLT template ID.
+    const flowId = rendered.sms?.templateId ?? this.flowIds[template];
     if (!flowId) {
-      throw new NotificationError('TEMPLATE_NOT_CONFIGURED', `No MSG91 flow set for "${template}"`, { provider: this.name, tryNextChannel: true });
+      throw new NotificationError('TEMPLATE_NOT_CONFIGURED', `No DLT template / flow ID set for "${template}": add it under Settings -> Message templates`, { provider: this.name, tryNextChannel: true });
     }
 
     const recipient = { mobiles: to.replace(/^\+/, '') };

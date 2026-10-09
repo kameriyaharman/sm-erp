@@ -33,3 +33,27 @@ export async function postWithTimeout(provider, url, { headers, body, timeoutMs 
     clearTimeout(timer);
   }
 }
+
+/** GET with the same timeout and error mapping as postWithTimeout. */
+export async function getWithTimeout(provider, url, { headers, timeoutMs }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+    const text = await response.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    return { status: response.status, body: parsed, text: text.slice(0, 500) };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new NotificationError('TIMEOUT', `No response from ${provider} within ${timeoutMs} ms`, { provider, retryable: true, cause: err });
+    }
+    throw new NotificationError('NETWORK_ERROR', `Could not reach ${provider}: ${err.cause?.code ?? err.message}`, { provider, retryable: true, cause: err });
+  } finally {
+    clearTimeout(timer);
+  }
+}

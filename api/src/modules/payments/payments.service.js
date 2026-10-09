@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { notifyFeeReceipt } from '../notifications/events.js';
 import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
 import { ROLES } from '../../config/roles.js';
@@ -248,7 +249,14 @@ export function webhookScope({ tenantId = null, keyId = null, platformKeyId = nu
  *
  * @returns {{ outcome: string, detail?: string, receiptId?: string, tenantId?: string, orderId?: string }}
  */
-export async function handleWebhook({ eventId, body, logger, scope }) {
+export async function handleWebhook(args) {
+  const result = await applyWebhook(args);
+  // New receipt committed: "Fee received" message to the parent (when the school switched it on).
+  if (result.receiptId && (result.outcome === 'processed' || result.outcome === 'needs_review')) notifyFeeReceipt(result.receiptId);
+  return result;
+}
+
+async function applyWebhook({ eventId, body, logger, scope }) {
   const eventType = body?.event;
   const payment = body?.payload?.payment?.entity ?? null;
   const gatewayOrderId = payment?.order_id ?? body?.payload?.order?.entity?.id ?? null;

@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const ORDER = ['seed-demo-setup.js', 'seed-demo-finance.js', 'seed-demo-payments.js'];
+const ORDER = ['seed-demo-setup.js', 'seed-demo-finance.js', 'seed-demo-payments.js', 'seed-demo-saas.js'];
 
 for (const file of ORDER) {
   const full = path.join(dir, file);

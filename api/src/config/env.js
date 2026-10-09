@@ -67,6 +67,28 @@ const envSchema = z.object({
   // pairs that fail with a retryable error that many times before succeeding.
   NOTIFY_SIMULATED_FAIL_ALWAYS: z.string().default('').transform(csv),
   NOTIFY_SIMULATED_FAIL_TRANSIENT: z.string().default('').transform(csv),
+  // E-mail (platform account; schools can connect their own SMTP under Settings -> Communication)
+  NOTIFY_EMAIL_PROVIDER: z.enum(['none', 'smtp', 'simulated']).default('none'),
+  EMAIL_SMTP_HOST: z.string().optional(),
+  EMAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  EMAIL_SMTP_USER: z.string().optional(),
+  EMAIL_SMTP_PASSWORD: z.string().optional(),
+  EMAIL_FROM: z.string().email().optional(),           // e.g. no-reply@smerp.in (must be allowed by the SMTP account)
+  EMAIL_FROM_NAME: z.string().default('SM ERP'),
+
+  // WhatsApp Cloud API (schools that connect their own Meta number). Base is overridable for tests.
+  META_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/, 'e.g. v25.0').default('v25.0'),
+  META_GRAPH_BASE: z.string().url().default('https://graph.facebook.com'),
+
+  // In-process scheduler: automatic fee reminders, birthday wishes, device-attendance cut-off.
+  // Runs on every replica; scheduled_runs makes each job run once per school per day.
+  SCHEDULER_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
+
+  // New schools created from the platform console.
+  DEFAULT_PLAN_CODE: z.string().default('standard'),
+  TRIAL_DAYS: z.coerce.number().int().min(0).max(365).default(14),
+
   // Parent portal base URL, used for payment links in fee reminders.
   PARENT_PORTAL_URL: z.string().url().refine((u) => u.startsWith('https://'), 'PARENT_PORTAL_URL must use https').optional(),
 
@@ -129,7 +151,7 @@ const envSchema = z.object({
     if (cfg.CORS_ORIGINS.length === 0 || cfg.CORS_ORIGINS.some((o) => !o.startsWith('https://') || /localhost|127\.0\.0\.1/.test(o))) {
       bad('CORS_ORIGINS', 'In production list only https:// origins of your web apps (no localhost)');
     }
-    if (cfg.NOTIFY_SMS_PROVIDER === 'simulated' || cfg.NOTIFY_WHATSAPP_PROVIDER === 'simulated') {
+    if (cfg.NOTIFY_SMS_PROVIDER === 'simulated' || cfg.NOTIFY_WHATSAPP_PROVIDER === 'simulated' || cfg.NOTIFY_EMAIL_PROVIDER === 'simulated') {
       bad('NOTIFY_SMS_PROVIDER', 'The simulated provider drops messages; pick a real provider or "none" in production');
     }
     if (cfg.NOTIFY_SIMULATED_FAIL_ALWAYS.length || cfg.NOTIFY_SIMULATED_FAIL_TRANSIENT.length) {
@@ -162,6 +184,9 @@ const envSchema = z.object({
   if (rzp.some((k) => cfg[k]) && !rzp.every((k) => cfg[k])) need(rzp, 'any RAZORPAY_* key is set');
   if (cfg.NODE_ENV === 'production' && cfg.RAZORPAY_KEY_ID?.startsWith('rzp_test_')) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['RAZORPAY_KEY_ID'], message: 'Test key in production' });
+  }
+  if (cfg.NOTIFY_EMAIL_PROVIDER === 'smtp') {
+    need(['EMAIL_SMTP_HOST', 'EMAIL_FROM'], 'NOTIFY_EMAIL_PROVIDER=smtp');
   }
   if (cfg.NOTIFY_SMS_PROVIDER === 'msg91') {
     need(['MSG91_AUTH_KEY', 'MSG91_SENDER_ID'], 'NOTIFY_SMS_PROVIDER=msg91');

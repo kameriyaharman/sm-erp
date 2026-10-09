@@ -1,4 +1,5 @@
 import { withTransaction, pool } from '../../db/pool.js';
+import { notifyFeeReceipt } from '../notifications/events.js';
 import { AppError } from '../../errors/AppError.js';
 import { assertBranchAccess, resolveBranchScope } from '../../middleware/scope.js';
 import { fromPaise, toPaise } from '../../utils/money.js';
@@ -404,6 +405,7 @@ export async function collectPayment(auth, input, idempotencyKey) {
   const receipt = await repo.getReceipt(pool, outcome.receiptId);
   if (!outcome.replayed) {
     logger.info('Fee collected', { receiptNumber: receipt.receipt_number, amount: receipt.amount, by: auth.userId });
+    notifyFeeReceipt(outcome.receiptId, auth.userId); // "Fee received" message, when the school switched it on
   }
   return { receipt: mapReceipt(receipt), replayed: outcome.replayed };
 }

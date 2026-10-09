@@ -3,13 +3,28 @@ import { AppError } from '../../errors/AppError.js';
 import { ROLES } from '../../config/roles.js';
 import { assertBranchAccess } from '../../middleware/scope.js';
 import { logger } from '../../utils/logger.js';
+import { env } from '../../config/env.js';
 import { kickDispatcher } from '../notifications/dispatcher.js';
+import { getNotifier } from '../notifications/index.js';
+import { getSettings } from '../settings/store.js';
+import { dayOff } from '../settings/sections.js';
+import { localParts, safeZone, sendAtFor } from '../../utils/time.js';
 import * as repo from './attendance.repository.js';
 import { loadSectionInScope } from '../shared/access.js';
 import { attendanceStats, monthRange } from '../shared/school-ops.helpers.js';
 
-// How far back each role may record or change attendance (0 = today only).
+// Default for how far back each role may record or change attendance (0 = today only). Each school
+// sets its own under Settings -> Attendance (backdateDays); the owner gets the branch admin's window.
 export const BACKDATE_DAYS = { teacher: 1, branch_admin: 30, super_admin: 30 };
+
+/** The branch's attendance policy + calendar (Settings -> Attendance, Holidays). */
+async function policyFor(ctx) {
+  const [policy, calendar] = await Promise.all([
+    getSettings(ctx.tenant_id, 'attendance', ctx.branch_id),
+    getSettings(ctx.tenant_id, 'calendar', ctx.branch_id),
+  ]);
+  return { policy, calendar };
+}
 
 const unprocessable = (code, message, details) => new AppError(422, code, message, details);
 
@@ -42,13 +57,20 @@ function assertSectionAccess(auth, ctx) {
 }
 
 /** Returns null if editable, otherwise a user-facing reason. */
-function editBlockReason(auth, ctx, date) {
+function editBlockReason(auth, ctx, date, { policy, calendar } = {}) {
   const today = isoOf(ctx.today);
   if (date > today) return 'Attendance cannot be recorded for a future date.';
   if (date < isoOf(ctx.year_start) || date > isoOf(ctx.year_end)) {
     return `The date is outside academic year ${ctx.academic_year}.`;
   }
-  const window = BACKDATE_DAYS[auth.role] ?? 0;
+  if (auth.role === ROLES.TEACHER && policy?.blockTeachersOnHolidays) {
+    const off = dayOff(calendar, date);
+    if (off) return `${off.reason}: no register is taken. If the school is open, ask the office to remove it from the holiday list.`;
+  }
+  const configured = policy?.backdateDays;
+  const window = configured
+    ? (auth.role === ROLES.TEACHER ? configured.teacher : configured.branch_admin)
+    : BACKDATE_DAYS[auth.role] ?? 0;
   if (daysBetween(date, today) > window) {
     return window === 0
       ? 'You can only record attendance for today.'
@@ -101,8 +123,9 @@ export async function listSections(auth, { date }) {
 export async function getRoster(auth, { sectionId, date }) {
   const ctx = await loadSection(pool, auth, sectionId);
   const day = date ?? isoOf(ctx.today);
-  const [students, submission] = await Promise.all([repo.getRoster(pool, sectionId, day), repo.getSubmission(pool, sectionId, day)]);
-  const blockReason = editBlockReason(auth, ctx, day);
+  const [students, submission, rules] = await Promise.all([repo.getRoster(pool, sectionId, day), repo.getSubmission(pool, sectionId, day), policyFor(ctx)]);
+  const blockReason = editBlockReason(auth, ctx, day, rules);
+  const off = dayOff(rules.calendar, day);
 
   return {
     section: {
@@ -118,6 +141,7 @@ export async function getRoster(auth, { sectionId, date }) {
     today: isoOf(ctx.today),
     canEdit: blockReason === null,
     editBlockedReason: blockReason,
+    holiday: off ? { name: off.name, weeklyOff: off.weeklyOff } : null,
     submission: mapSubmission(submission),
     students: students.map((s) => ({
       studentId: s.student_id,
@@ -160,6 +184,10 @@ function absenceMessage({ parentName, studentName, label, schoolName, date }) {
   return `Dear ${parentName}, ${studentName} (${label}) was marked absent at ${schoolName} on ${formatDisplayDate(date)}. If this is unexpected, please contact the school office.`;
 }
 
+function lateMessage({ parentName, studentName, label, schoolName, date }) {
+  return `Dear ${parentName}, ${studentName} (${label}) was marked late at ${schoolName} on ${formatDisplayDate(date)}.`;
+}
+
 function correctionMessage({ parentName, studentName, schoolName, date }) {
   return `Dear ${parentName}, update from ${schoolName}: ${studentName} has been marked present on ${formatDisplayDate(date)}. Please ignore the earlier absence message.`;
 }
@@ -179,11 +207,22 @@ function contactFor(recipient) {
  *   absent -> not absent, sent      -> correction message
  */
 export async function submitAttendance(auth, input) {
+  // The school's rules for the messages a register can trigger (Settings -> Notification rules).
+  const notifier = getNotifier({ env, logger });
+  const preCtx = await repo.getSectionContext(pool, input.sectionId, auth.userId);
+  const [absentRule, lateRule, rules] = preCtx
+    ? await Promise.all([
+      notifier.ruleFor(preCtx.tenant_id, 'absentee_alert', preCtx.branch_id),
+      notifier.ruleFor(preCtx.tenant_id, 'late_arrival', preCtx.branch_id),
+      policyFor(preCtx),
+    ])
+    : [null, null, {}];
+
   const result = await withTransaction(async (db) => {
     const ctx = await loadSection(db, auth, input.sectionId);
     const date = input.date ?? isoOf(ctx.today);
 
-    const blockReason = editBlockReason(auth, ctx, date);
+    const blockReason = editBlockReason(auth, ctx, date, rules);
     if (blockReason) throw unprocessable('ATTENDANCE_LOCKED', blockReason);
 
     await repo.lockSectionDay(db, ctx.id, date);
@@ -216,6 +255,11 @@ export async function submitAttendance(auth, input) {
 
     // ---- notifications (outbox)
     const newlyAbsent = input.records.filter((r) => r.status === 'absent' && before.get(r.studentId) !== 'absent').map((r) => r.studentId);
+    // Late alerts only when the school switched them on (off by default).
+    const newlyLate = lateRule?.enabled
+      ? input.records.filter((r) => r.status === 'late' && before.get(r.studentId) !== 'late').map((r) => r.studentId)
+      : [];
+    const absenceOn = absentRule ? absentRule.enabled : true;
     const noLongerAbsent = input.records.filter((r) => r.status !== 'absent' && before.get(r.studentId) === 'absent').map((r) => r.studentId);
 
     const cancelled = noLongerAbsent.length ? await repo.cancelPendingAbsence(db, ctx.tenant_id, noLongerAbsent, date) : [];
@@ -224,19 +268,33 @@ export async function submitAttendance(auth, input) {
 
     const outbox = [];
     const skipped = [];
-    if (input.notifyParents && (newlyAbsent.length || needCorrection.length)) {
-      const recipients = await repo.getNoticeRecipients(db, [...newlyAbsent, ...needCorrection]);
+    const zone = safeZone(ctx.timezone);
+    const markedAt = localParts(new Date(), zone).time; // "late" marked by hand: the time it was recorded
+    const sendAt = {
+      attendance_absent: sendAtFor(absentRule?.timing, { timeZone: zone, date }).toISOString(),
+      attendance_correction: new Date().toISOString(),
+      late_arrival: sendAtFor(lateRule?.timing, { timeZone: zone, date }).toISOString(),
+    };
+    const audience = { attendance_absent: absentRule?.audience, attendance_correction: absentRule?.audience, late_arrival: lateRule?.audience };
+    const groups = [
+      [absenceOn ? newlyAbsent : [], 'attendance_absent'],
+      [needCorrection, 'attendance_correction'],
+      [newlyLate, 'late_arrival'],
+    ];
+    if (input.notifyParents && groups.some(([ids]) => ids.length)) {
+      const recipients = await repo.getNoticeRecipients(db, groups.flatMap(([ids]) => ids));
       const byStudent = Map.groupBy ? Map.groupBy(recipients, (r) => r.student_id) : groupBy(recipients, (r) => r.student_id);
       const label = `${ctx.class_name} ${ctx.name}`;
+      const schoolName = `${ctx.school_name}, ${ctx.branch_name}`;
 
-      for (const [studentIds, template] of [[newlyAbsent, 'attendance_absent'], [needCorrection, 'attendance_correction']]) {
+      for (const [studentIds, template] of groups) {
         for (const studentId of studentIds) {
-          const parents = byStudent.get(studentId) ?? [];
+          const parents = (byStudent.get(studentId) ?? []).filter((p) => audience[template] !== 'primary_parent' || p.is_primary);
           let queuedForStudent = 0;
           for (const parent of parents) {
             const contact = contactFor(parent);
             if (!contact) continue;
-            const vars = { parentName: parent.parent_name, studentName: parent.student_name, label, schoolName: `${ctx.school_name}, ${ctx.branch_name}`, date };
+            const vars = { parentName: parent.parent_name, studentName: parent.student_name, label, schoolName, date };
             outbox.push({
               tenant_id: ctx.tenant_id,
               branch_id: ctx.branch_id,
@@ -248,13 +306,18 @@ export async function submitAttendance(auth, input) {
               payload: {
                 date,
                 sectionId: ctx.id,
-                status: template === 'attendance_absent' ? 'absent' : 'present',
+                status: template === 'attendance_absent' ? 'absent' : template === 'late_arrival' ? 'late' : 'present',
                 studentName: parent.student_name,
-                schoolName: `${ctx.school_name}, ${ctx.branch_name}`,
+                className: label,
+                schoolName,
+                phone: parent.phone ?? null,
+                email: parent.email ?? null,
+                ...(template === 'late_arrival' && { vars: { studentName: parent.student_name, className: label, schoolName, date, time: markedAt } }),
               },
-              message: template === 'attendance_absent' ? absenceMessage(vars) : correctionMessage(vars),
+              message: template === 'attendance_absent' ? absenceMessage(vars) : template === 'late_arrival' ? lateMessage(vars) : correctionMessage(vars),
               dedupe_key: `${template}:${studentId}:${date}:${parent.parent_user_id}`,
               created_by: auth.userId,
+              next_attempt_at: sendAt[template],
             });
             queuedForStudent += 1;
           }
@@ -272,13 +335,15 @@ export async function submitAttendance(auth, input) {
       notifications: {
         queued: queued.filter((q) => q.template === 'attendance_absent').length,
         corrections: queued.filter((q) => q.template === 'attendance_correction').length,
+        late: queued.filter((q) => q.template === 'late_arrival').length,
         cancelled: cancelled.length,
         skipped,
+        ...(!absenceOn && newlyAbsent.length > 0 && { absenceAlertsOff: true }),
       },
     };
   });
 
-  if (result.notifications.queued + result.notifications.corrections > 0) kickDispatcher();
+  if (result.notifications.queued + result.notifications.corrections + result.notifications.late > 0) kickDispatcher();
 
   logger.info('Attendance submitted', {
     sectionId: result.ctx.id,

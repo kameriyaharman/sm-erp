@@ -133,7 +133,13 @@ function presentLog(row) {
     template: row.template,
     channel: row.channel,
     provider: row.provider,
-    recipient: { userId: row.recipient_user_id, name: row.recipient_name || null, phone: maskPhone(row.recipient_phone) },
+    recipient: {
+      userId: row.recipient_user_id,
+      name: row.recipient_name || null,
+      phone: row.recipient_phone ? maskPhone(row.recipient_phone) : null,
+      email: row.recipient_email ? String(row.recipient_email).replace(/^(.).*(@.*)$/, '$1•••$2') : null,
+    },
+    account: row.account ?? null,
     student: row.student_id ? { id: row.student_id, name: row.student_name } : null,
     status: row.status,
     attempts: row.attempts,
@@ -167,6 +173,6 @@ export async function retryLog(req, res) {
   if (!result) throw new AppError(409, 'NOT_RETRYABLE', 'This message cannot be retried right now');
   const updated = await findLog(row.id);
   res.status(result.ok ? 200 : 502).json({
-    data: { ...presentLog(updated), recipient: { userId: updated.recipient_user_id, phone: maskPhone(updated.recipient_phone) } },
+    data: { ...presentLog(updated), recipient: { userId: updated.recipient_user_id, phone: updated.recipient_phone ? maskPhone(updated.recipient_phone) : null } },
   });
 }

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { ALL_ROLES } from '../../config/roles.js';
 import { NotificationError } from './errors.js';
 import { maskPhone, normalizePhone } from './phone.js';
+import { EVENTS } from './catalog.js';
+import { renderEvent } from './render.js';
 import { TEMPLATES, smsSegments } from './templates.js';
 
 /**
@@ -56,10 +58,13 @@ export class NotificationService {
     channelOrder = ['whatsapp', 'sms'],
     retry = {},
     recipientResolver,
+    tenantResolver,
     concurrency = 5,
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   }) {
     this.providers = providers;
+    /** Per-school providers, rules and templates (tenant-resolver.js). Without it, env providers serve everyone. */
+    this.tenantResolver = tenantResolver;
     this.logStore = logStore;
     this.logger = logger;
     this.schoolName = schoolName;
@@ -170,31 +175,37 @@ export class NotificationService {
 
       const recipients = context.recipients ?? (await this.recipientResolver({ role: targetRole, tenantId: context.tenantId, branchId: context.branchId }));
 
-      // One message per phone number (shared family phones, siblings' parents).
+      // One message per phone number (shared family phones, siblings' parents); people without a
+      // usable phone are reached by e-mail when the school has an e-mail channel.
       const byPhone = new Map();
       for (const person of recipients) {
-        if (!person.phone) {
+        let phone = null;
+        if (person.phone) {
+          try {
+            phone = normalizePhone(person.phone);
+          } catch {
+            if (!person.email) {
+              summary.skipped += 1;
+              summary.failures.push({ userId: person.userId, phone: maskPhone(person.phone), code: 'INVALID_PHONE' });
+              continue;
+            }
+          }
+        }
+        const key = phone ?? (person.email ? `mail:${String(person.email).toLowerCase()}` : null);
+        if (!key) {
           summary.skipped += 1;
           continue;
         }
-        let phone;
-        try {
-          phone = normalizePhone(person.phone);
-        } catch {
-          summary.skipped += 1;
-          summary.failures.push({ userId: person.userId, phone: maskPhone(person.phone), code: 'INVALID_PHONE' });
-          continue;
-        }
-        if (!byPhone.has(phone)) byPhone.set(phone, person);
+        if (!byPhone.has(key)) byPhone.set(key, { ...person, phone });
       }
       summary.total = byPhone.size;
 
       const vars = { noticeTitle: noticeTitle.trim(), noticeBody: noticeBody.trim(), schoolName: context.schoolName ?? this.schoolName };
-      const results = await mapWithConcurrency([...byPhone], this.concurrency, async ([phone, person]) => {
+      const results = await mapWithConcurrency([...byPhone], this.concurrency, async ([key, person]) => {
         const result = await this.#dispatch({
           eventType: 'broadcast_notice',
           template: 'general_notice',
-          to: phone,
+          to: { phone: person.phone, email: person.email ?? null },
           vars,
           quiet: true,
           context: {
@@ -202,10 +213,11 @@ export class NotificationService {
             branchId: person.branchId ?? context.branchId,
             recipientUserId: person.userId,
             batchId,
-            dedupeKey: `broadcast:${batchId}:${phone}`,
+            dedupeKey: `broadcast:${batchId}:${key}`,
+            ruleEvent: 'general_notice',
           },
         });
-        return { person, phone, result };
+        return { person, phone: person.phone ?? key, result };
       });
 
       for (const { person, phone, result } of results) {
@@ -237,6 +249,46 @@ export class NotificationService {
   /** @deprecated Use sendBroadcastNotice. */
   async sendGeneralNotice(targetRole, noticeTitle, noticeBody, context = {}) {
     return this.sendBroadcastNotice(targetRole, noticeTitle, noticeBody, context);
+  }
+
+  // =====================================================================
+  // 4. Any catalog event (gate entry, late arrival, fee receipt, report card ...)
+  // =====================================================================
+
+  /**
+   * Sends one event to one person through the school's rule, channels and templates.
+   * @param {string} eventType                 key of catalog.js EVENTS
+   * @param {{ phone?: string|null, email?: string|null }} recipient
+   * @param {object} vars                      event data (camelCase), e.g. { studentName, date, time }
+   * @param {object} [context]                 tenantId, branchId, studentId, recipientUserId, dedupeKey, batchId, channels ...
+   */
+  async sendEvent(eventType, recipient, vars, context = {}) {
+    return this.#guarded(eventType, recipient?.phone ?? recipient?.email ?? null, async () => {
+      if (!EVENTS[eventType] && !TEMPLATES[eventType]) throw invalid(`Unknown event "${eventType}"`);
+      if (!recipient?.phone && !recipient?.email) throw new NotificationError('NO_ADDRESS', 'No phone number or email address for this person');
+      return this.#dispatch({
+        eventType: context.eventType ?? eventType,
+        template: eventType,
+        to: recipient,
+        vars: { ...vars, schoolName: vars?.schoolName ?? context.schoolName ?? this.schoolName },
+        context,
+      });
+    });
+  }
+
+  /**
+   * The school's rule for an event (null when no per-school setup is configured): callers that
+   * queue messages ahead of time (attendance outbox, scheduled jobs) use it to skip work early.
+   */
+  async ruleFor(tenantId, eventType, branchId = null) {
+    if (!this.tenantResolver || !tenantId) return null;
+    try {
+      const setup = await this.tenantResolver.resolve({ tenantId, branchId });
+      return setup?.rule(eventType) ?? null;
+    } catch (err) {
+      this.logger.error('Could not load notification rule', { tenantId, eventType, error: err.message });
+      return null;
+    }
   }
 
   // =====================================================================
@@ -285,10 +337,6 @@ export class NotificationService {
     return {
       name: `notification-service(${this.channelOrder.join('>') || 'none'})`,
       send: async (row) => {
-        if (row.channel === 'email') {
-          if (!emailProvider) throw new NotificationError('CHANNEL_NOT_SUPPORTED', 'No email provider configured');
-          return emailProvider.send(row);
-        }
         const context = {
           tenantId: row.tenant_id,
           branchId: row.branch_id,
@@ -297,21 +345,25 @@ export class NotificationService {
           maxRetries: 0,
           schoolName: row.payload.schoolName,
         };
+        const phone = row.channel === 'email' ? row.payload.phone ?? null : row.recipient;
+        const email = row.channel === 'email' ? row.recipient : row.payload.email ?? null;
         let result;
         if (row.template === 'attendance_absent') {
-          result = await this.sendAbsenteeAlert(row.recipient, row.payload.studentName, row.payload.date, context);
+          result = this.tenantResolver || row.channel !== 'email'
+            ? await this.sendEvent('absentee_alert', { phone, email }, { studentName: row.payload.studentName, date: row.payload.date, className: row.payload.className }, context)
+            : await legacyEmail(emailProvider, row);
         } else if (row.template === 'attendance_correction') {
-          result = await this.#guarded('attendance_correction', row.recipient, () =>
-            this.#dispatch({
-              eventType: 'attendance_correction',
-              template: 'attendance_correction',
-              to: row.recipient,
-              vars: { studentName: row.payload.studentName, date: row.payload.date, schoolName: row.payload.schoolName ?? this.schoolName },
-              context,
-            }),
-          );
+          result = this.tenantResolver || row.channel !== 'email'
+            ? await this.sendEvent('attendance_correction', { phone, email }, { studentName: row.payload.studentName, date: row.payload.date }, context)
+            : await legacyEmail(emailProvider, row);
+        } else if (EVENTS[row.template]) {
+          result = await this.sendEvent(row.template, { phone, email }, row.payload.vars ?? {}, context);
         } else {
           throw new NotificationError('TEMPLATE_NOT_CONFIGURED', `No template for outbox type "${row.template}"`);
+        }
+        if (result.skipped && !result.duplicate) {
+          // The school switched this message off after it was queued: nothing to send.
+          return { providerMessageId: `SKIPPED:${result.skipped}` };
         }
         if (!result.ok) throw new NotificationError(result.error.code, result.error.message, { retryable: result.error.retryable });
         return { providerMessageId: result.providerMessageId };
@@ -334,10 +386,34 @@ export class NotificationService {
     }
   }
 
-  /** Log -> deliver -> log outcome. */
+  /** Per-school setup for a message, or null (no resolver / no school / lookup failed: env providers). */
+  async #setupFor(tenantId, branchId) {
+    if (!this.tenantResolver || !tenantId) return null;
+    try {
+      return await this.tenantResolver.resolve({ tenantId, branchId: branchId ?? null });
+    } catch (err) {
+      this.logger.error('Could not load school messaging setup; using platform defaults', { tenantId, error: err.message });
+      return null;
+    }
+  }
+
+  /** Log -> deliver -> log outcome. `to` is a phone number or { phone, email }. */
   async #dispatch({ eventType, template, to, vars, context = {}, quiet = false }) {
-    const phoneForLog = safeNormalize(to) ?? String(to ?? '').trim().slice(0, 20);
-    const channels = context.channels;
+    const recipient = typeof to === 'object' && to !== null ? to : { phone: to, email: null };
+    const phoneForLog = recipient.phone ? safeNormalize(recipient.phone) ?? String(recipient.phone).trim().slice(0, 20) : null;
+    const emailForLog = recipient.email ? String(recipient.email).trim().toLowerCase().slice(0, 254) : null;
+
+    const setup = await this.#setupFor(context.tenantId, context.branchId);
+    let channels = context.channels;
+    if (setup) {
+      const ruleKey = context.ruleEvent ?? (EVENTS[eventType] ? eventType : template);
+      const rule = setup.rule(ruleKey);
+      if (rule && !rule.enabled && !EVENTS[ruleKey]?.alwaysOn && !context.ignoreRule) {
+        return { ok: true, template, skipped: 'RULE_DISABLED' };
+      }
+      channels ??= rule?.channels;
+      if (setup.displayName && vars?.schoolName !== undefined) vars = { ...vars, schoolName: setup.displayName };
+    }
 
     let logId = null;
     if (this.logStore && context.log !== false) {
@@ -349,6 +425,7 @@ export class NotificationService {
           eventType,
           template,
           recipientPhone: phoneForLog,
+          recipientEmail: emailForLog,
           recipientUserId: context.recipientUserId,
           studentId: context.studentId,
           payload: { vars, ...(channels && { channels }) },
@@ -368,10 +445,10 @@ export class NotificationService {
 
     let result;
     try {
-      result = await this.#deliver({ template, to, vars, channels, quiet });
+      result = await this.#deliver({ template, recipient, vars, channels, quiet, setup });
     } catch (err) {
       const error = asNotificationError(err);
-      this.logger.error('Notification not sent', { template, to: maskPhone(phoneForLog), error: error.toJSON() });
+      this.logger.error('Notification not sent', { template, to: maskPhone(phoneForLog ?? emailForLog), error: error.toJSON() });
       result = { ok: false, template, attempts: 0, error: error.toJSON() };
     }
 
@@ -390,7 +467,15 @@ export class NotificationService {
   async #resend(row) {
     let result;
     try {
-      result = await this.#deliver({ template: row.template, to: row.recipient_phone, vars: row.payload.vars, channels: row.payload.channels, quiet: true });
+      const setup = await this.#setupFor(row.tenant_id, row.branch_id);
+      result = await this.#deliver({
+        template: row.template,
+        recipient: { phone: row.recipient_phone ?? null, email: row.recipient_email ?? null },
+        vars: row.payload.vars,
+        channels: row.payload.channels,
+        quiet: true,
+        setup,
+      });
     } catch (err) {
       const error = asNotificationError(err);
       result = { ok: false, template: row.template, attempts: 0, error: error.toJSON() };
@@ -404,40 +489,78 @@ export class NotificationService {
     (result.ok ? this.logger.info : this.logger.warn).call(this.logger, result.ok ? 'Notification retry sent' : 'Notification retry failed', {
       logId: row.id,
       template: row.template,
-      to: maskPhone(row.recipient_phone),
+      to: maskPhone(row.recipient_phone ?? row.recipient_email),
       retry: row.retry_count,
       ...(result.ok ? { channel: result.channel } : { error: result.error }),
     });
     return result;
   }
 
-  /** Channel loop with in-process retries and fallback. Throws only for unusable input (bad phone, no channel). */
-  async #deliver({ template, to, vars, channels, quiet = false }) {
-    const phone = normalizePhone(to);
-    const rendered = TEMPLATES[template].render(vars);
-    const order = (channels ?? this.channelOrder).filter((c) => this.channelOrder.includes(c));
-    if (order.length === 0) throw new NotificationError('NO_CHANNEL', 'No configured channel can send this message');
+  /**
+   * Channel loop with in-process retries and fallback. Throws only for unusable input (no valid
+   * phone or email, no channel). Uses the school's providers, channel order and templates when
+   * `setup` is given, the service's own providers otherwise.
+   */
+  async #deliver({ template, recipient, vars, channels, quiet = false, setup = null }) {
+    let phone = null;
+    let phoneError = null;
+    if (recipient.phone) {
+      try {
+        phone = normalizePhone(recipient.phone);
+      } catch (err) {
+        phoneError = err;
+      }
+    }
+    const email = recipient.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(recipient.email).trim()) ? String(recipient.email).trim() : null;
+    if (!phone && !email) {
+      throw phoneError ?? new NotificationError('NO_ADDRESS', 'No phone number or email address to send to');
+    }
+
+    const providers = setup ? setup.providers : this.providers;
+    const usable = (c) => Boolean(providers[c]?.supports(c)) && (setup ? true : this.channelOrder.includes(c) || c === 'email');
+    const order = (channels ?? (setup ? ['whatsapp', 'sms'] : this.channelOrder)).filter(usable);
+    if (order.length === 0) {
+      throw new NotificationError('NO_CHANNEL', setup && Object.keys(setup.problems ?? {}).length
+        ? `No usable channel: ${Object.entries(setup.problems).map(([c, p]) => `${c}: ${p}`).join('; ')}`
+        : 'No configured channel can send this message');
+    }
+    const rendered = renderEvent(template, vars, setup?.templates(template) ?? {});
 
     const attempts = [];
     let lastError;
     for (const channel of order) {
-      const provider = this.providers[channel];
+      const address = channel === 'email' ? email : phone;
+      if (!address) {
+        lastError = channel === 'email'
+          ? new NotificationError('NO_EMAIL', 'No email address for this person', { tryNextChannel: true })
+          : phoneError ?? new NotificationError('NO_PHONE', 'No mobile number for this person', { tryNextChannel: true });
+        if (!lastError.tryNextChannel && channel !== 'email') lastError.tryNextChannel = true;
+        attempts.push({ channel, provider: null, code: lastError.code });
+        continue;
+      }
+      if (!rendered[channel]) {
+        lastError = new NotificationError('TEMPLATE_NOT_CONFIGURED', `No ${channel} text for "${template}"`, { tryNextChannel: true });
+        attempts.push({ channel, provider: null, code: lastError.code });
+        continue;
+      }
+      const provider = providers[channel];
       try {
-        const sent = await this.#sendWithRetry(provider, { channel, to: phone, template, rendered }, attempts);
+        const sent = await this.#sendWithRetry(provider, { channel, to: address, template, rendered }, attempts);
         const result = {
           ok: true,
           template,
           channel,
           provider: provider.name,
+          account: setup?.accounts?.[channel] ?? 'platform',
           providerMessageId: sent.providerMessageId,
-          attempts: attempts.length + 1, // failed tries + the one that worked
+          attempts: attempts.filter((a) => a.provider).length + 1, // failed tries + the one that worked
           ...(channel === 'sms' && { smsSegments: smsSegments(rendered.sms.text) }),
         };
         if (!quiet) {
-          this.logger.info('Notification sent', { template, channel, provider: provider.name, to: maskPhone(phone), providerMessageId: sent.providerMessageId, attempts: result.attempts });
+          this.logger.info('Notification sent', { template, channel, provider: provider.name, to: channel === 'email' ? maskEmail(address) : maskPhone(address), providerMessageId: sent.providerMessageId, attempts: result.attempts });
         }
         if (attempts.some((a) => a.channel !== channel)) {
-          this.logger.warn('Notification used fallback channel', { template, to: maskPhone(phone), deliveredVia: channel });
+          this.logger.warn('Notification used fallback channel', { template, to: maskPhone(phone ?? ''), deliveredVia: channel });
         }
         return result;
       } catch (err) {
@@ -448,12 +571,12 @@ export class NotificationService {
 
     this.logger.error('Notification dispatch failed', {
       template,
-      to: maskPhone(phone),
+      to: maskPhone(phone ?? ''),
       attempts: attempts.map((a) => ({ channel: a.channel, provider: a.provider, code: a.code, status: a.status })),
       error: lastError.toJSON(),
     });
-    const last = attempts[attempts.length - 1];
-    return { ok: false, template, attempts: attempts.length, lastAttempt: last, error: lastError.toJSON() };
+    const last = [...attempts].reverse().find((a) => a.provider) ?? attempts[attempts.length - 1];
+    return { ok: false, template, attempts: attempts.filter((a) => a.provider).length, lastAttempt: last, error: lastError.toJSON() };
   }
 
   async #sendWithRetry(provider, message, attempts) {
@@ -503,6 +626,17 @@ function isoDate(value) {
     return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
   }
   return String(value).slice(0, 10);
+}
+
+function maskEmail(value) {
+  return String(value ?? '').replace(/^(.).*(@.*)$/, '$1•••$2');
+}
+
+/** Pre-resolver behaviour for e-mail rows in the attendance outbox (development stub provider). */
+async function legacyEmail(emailProvider, row) {
+  if (!emailProvider) throw new NotificationError('CHANNEL_NOT_SUPPORTED', 'No email provider configured');
+  const sent = await emailProvider.send(row);
+  return { ok: true, providerMessageId: sent.providerMessageId };
 }
 
 function safeNormalize(phone) {

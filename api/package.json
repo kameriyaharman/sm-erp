@@ -15,6 +15,7 @@
     "migrate:status": "node scripts/migrate.js --status",
     "test": "node --test test/*.test.js",
     "job:fee-reminders": "node scripts/run-fee-reminders.js",
+    "platform:admin": "node scripts/create-platform-admin.js",
     "release": "node scripts/migrate.js && node scripts/seed-demo.js && node scripts/seed-demo-extras.js && node scripts/seed-demo-modules.js"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.4.0",
+    "nodemailer": "^7.0.13",
     "pdfkit": "^0.15.2",
     "pg": "^8.13.1",
     "qrcode": "^1.5.4",
