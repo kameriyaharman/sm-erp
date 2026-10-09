@@ -9,7 +9,7 @@ export default function Home() {
   useEffect(() => {
     getAccessToken().then((token) => {
       const user = token ? currentUser() : null;
-      router.replace(user ? homeFor(user.role) : '/login');
+      router.replace(user ? homeFor(user.role, user.tenantId) : '/login');
     });
   }, [router]);
   return null;

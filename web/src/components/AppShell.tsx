@@ -6,6 +6,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   Award,
   Bell,
+  Building2,
+  Package,
   BookOpenCheck,
   BookText,
   Bus,
@@ -32,6 +34,7 @@ import {
 } from 'lucide-react';
 import { apiGet, logout, ROLE_LABEL, type Role, type SessionUser } from '@/lib/session';
 import { useTeacherScope } from '@/lib/access';
+import { hasModule, useEntitlements, type ModuleKey } from '@/lib/entitlements';
 import GlobalSearch from './GlobalSearch';
 import UserMenu from './UserMenu';
 
@@ -42,6 +45,10 @@ type NavItem = {
   roles: Role[];
   /** Teachers only see it when they are a class teacher (admins always). */
   classTeacherOnly?: boolean;
+  /** Hidden when the school's plan / Settings -> Modules has this module off. */
+  module?: ModuleKey;
+  /** Only for SM ERP platform administrators (super_admin without a school). */
+  platformOnly?: boolean;
 };
 type NavGroup = { label: string | null; items: NavItem[] };
 
@@ -75,30 +82,37 @@ export const NAV: NavGroup[] = [
       { href: '/fees', label: 'Fee collection', icon: Receipt, roles: ADMINS },
       { href: '/fees/setup', label: 'Fee structure', icon: Layers, roles: ADMINS },
       { href: '/fees/defaulters', label: 'Defaulters', icon: TriangleAlert, roles: ADMINS },
-      { href: '/fees/online-payments', label: 'Online payments', icon: CreditCard, roles: ADMINS },
-      { href: '/accounts', label: 'Day book', icon: BookText, roles: ADMINS },
-      { href: '/expenses', label: 'Expenses', icon: Wallet, roles: ADMINS },
+      { href: '/fees/online-payments', label: 'Online payments', icon: CreditCard, roles: ADMINS, module: 'online_payments' },
+      { href: '/accounts', label: 'Day book', icon: BookText, roles: ADMINS, module: 'accounts' },
+      { href: '/expenses', label: 'Expenses', icon: Wallet, roles: ADMINS, module: 'expenses' },
     ],
   },
   {
     label: 'Academics',
     items: [
-      { href: '/exams', label: 'Exams & marks', icon: ClipboardList, roles: ADMINS },
-      { href: '/teacher/marks', label: 'Marks entry', icon: ClipboardList, roles: ['teacher'] },
-      { href: '/report-cards', label: 'Report cards', icon: Award, roles: ADMINS },
-      { href: '/timetable', label: 'Timetable', icon: CalendarDays, roles: ADMINS },
-      { href: '/teacher/timetable', label: 'My timetable', icon: CalendarDays, roles: ['teacher'] },
-      { href: '/homework', label: 'Homework', icon: BookOpenCheck, roles: STAFF },
+      { href: '/exams', label: 'Exams & marks', icon: ClipboardList, roles: ADMINS, module: 'exams' },
+      { href: '/teacher/marks', label: 'Marks entry', icon: ClipboardList, roles: ['teacher'], module: 'exams' },
+      { href: '/report-cards', label: 'Report cards', icon: Award, roles: ADMINS, module: 'report_cards' },
+      { href: '/timetable', label: 'Timetable', icon: CalendarDays, roles: ADMINS, module: 'timetable' },
+      { href: '/teacher/timetable', label: 'My timetable', icon: CalendarDays, roles: ['teacher'], module: 'timetable' },
+      { href: '/homework', label: 'Homework', icon: BookOpenCheck, roles: STAFF, module: 'homework' },
     ],
   },
   {
     label: 'Office',
     items: [
-      { href: '/certificates', label: 'Certificates', icon: FileBadge, roles: ADMINS },
-      { href: '/notices', label: 'Notices', icon: Megaphone, roles: STAFF },
-      { href: '/transport', label: 'Transport', icon: Bus, roles: ADMINS },
+      { href: '/certificates', label: 'Certificates', icon: FileBadge, roles: ADMINS, module: 'certificates' },
+      { href: '/notices', label: 'Notices', icon: Megaphone, roles: STAFF, module: 'notices' },
+      { href: '/transport', label: 'Transport', icon: Bus, roles: ADMINS, module: 'transport' },
       { href: '/notifications', label: 'SMS / WhatsApp log', icon: MessageSquareText, roles: ADMINS },
       { href: '/settings', label: 'Settings', icon: Settings, roles: ADMINS },
+    ],
+  },
+  {
+    label: 'SM ERP platform',
+    items: [
+      { href: '/platform', label: 'Schools', icon: Building2, roles: ['super_admin'], platformOnly: true },
+      { href: '/platform/plans', label: 'Plans', icon: Package, roles: ['super_admin'], platformOnly: true },
     ],
   },
 ];
@@ -110,6 +124,13 @@ const SUBPAGE_LABEL: Record<string, string> = {
   '/settings/payments': 'Online payments',
   '/settings/users': 'Portal logins',
   '/settings/account': 'My account',
+  '/settings/modules': 'Modules',
+  '/settings/communication': 'WhatsApp, SMS & email',
+  '/settings/templates': 'Message templates',
+  '/settings/notification-rules': 'Notification rules',
+  '/settings/attendance': 'Attendance & holidays',
+  '/settings/devices': 'Attendance devices',
+  '/settings/audit': 'Change log',
   '/students/new': 'New admission',
 };
 function subpageLabel(pathname: string): string {
@@ -158,7 +179,19 @@ export default function AppShell({ user, children }: { user: SessionUser; childr
   // A teacher who is not a class teacher has no register to mark: hide that item once we know.
   const { scope } = useTeacherScope(user.role === 'teacher');
   const notClassTeacher = user.role === 'teacher' && scope !== null && !scope.isClassTeacher;
-  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => i.roles.includes(user.role) && !(i.classTeacherOnly && notClassTeacher)) })).filter((g) => g.items.length);
+  const entitlements = useEntitlements();
+  const isPlatform = user.role === 'super_admin' && !user.tenantId;
+  const groups = NAV.map((g) => ({
+    ...g,
+    items: g.items.filter(
+      (i) =>
+        i.roles.includes(user.role) &&
+        !(i.classTeacherOnly && notClassTeacher) &&
+        hasModule(entitlements, i.module) &&
+        // Platform administrators see the platform console; school screens need a school.
+        (isPlatform ? Boolean(i.platformOnly) : !i.platformOnly),
+    ),
+  })).filter((g) => g.items.length);
   const hrefs = groups.flatMap((g) => g.items.map((i) => i.href));
   const initials = `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase();
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ');

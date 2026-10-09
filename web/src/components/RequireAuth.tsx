@@ -30,7 +30,7 @@ export default function RequireAuth({ roles, children, shell = true }: { roles: 
         return;
       }
       if (!roles.includes(me.role)) {
-        router.replace(homeFor(me.role));
+        router.replace(homeFor(me.role, me.tenantId));
         return;
       }
       setUser(me);

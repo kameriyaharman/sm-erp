@@ -73,8 +73,8 @@ schoolSettingsRouter.post('/communication/:channel/verify', ...admins, b(s.chann
   res.json({ data: await comm.verifyChannel(req.auth, req.valid.params.channel, req.valid.body) });
 });
 schoolSettingsRouter.post('/communication/:channel/test', ...admins, b(s.testBody, s.channelParams), async (req, res) => {
-  const result = await comm.sendTest(req.auth, req.valid.params.channel, req.valid.body);
-  res.status(result.ok ? 200 : 502).json({ data: result });
+  // 200 either way: a failed test is a normal answer ({ ok: false, message }), not an API error.
+  res.json({ data: await comm.sendTest(req.auth, req.valid.params.channel, req.valid.body) });
 });
 schoolSettingsRouter.delete('/communication/:channel', ...admins, validate({ params: s.channelParams, query: s.branchQuery }), async (req, res) => {
   res.json({ data: await comm.deleteChannel(req.auth, req.valid.params.channel, req.valid.query) });

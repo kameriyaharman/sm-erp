@@ -225,6 +225,77 @@ provider and exist to rehearse failures in development.
 
 Tests: `npm test` (fake Twilio, MSG91 and WATI servers, in-memory log store).
 
+## SaaS: plans, modules and school settings
+
+Migration 017. Each school configures itself under **Settings**; the SM ERP operator manages plans
+and schools in the **platform console** (a `super_admin` with no school: `npm run platform:admin -- you@company.in`,
+then sign in with an empty school code).
+
+**Plans and modules** (`src/config/modules.js`). Core modules (students, staff, attendance, fees) are
+always on. A school's modules = plan modules + per-school overrides (platform console) − what the school
+switched off (Settings → Modules). `requireModule('transport')` (in `routes.js` and `documents.routes.js`)
+answers `403 MODULE_DISABLED` with a sentence saying "switched off" or "not in your plan". Plan limits:
+`maxStudents` (checked on admission, `403 PLAN_LIMIT_REACHED`), `maxBranches`, and monthly WhatsApp / SMS /
+email counts for messages sent through the **platform** account. `GET /school/entitlements` tells the apps
+what to show. A school without a subscription row gets everything (nothing breaks for old schools).
+
+**Settings sections** (`tenant_settings`, `src/modules/settings/sections.js`): `attendance` (back-dating
+per role, no teacher registers on holidays, minimum %, device timings), `calendar` (weekly offs,
+holidays), `messaging` (school name in messages, reply-to email). Attendance and calendar can be
+overridden per branch. Saves carry a `version` (409 `SETTINGS_CHANGED` on a concurrent edit) and every
+change is written to `settings_audit_log` (Settings → Change log).
+
+**Who may change what**: the owner (school `super_admin`) everything; a branch admin their own branch,
+and school-wide settings too when the school has only one branch.
+
+**Messaging per school** (`notifications/tenant-resolver.js`). For each channel the school uses the SM ERP
+platform account (env providers, counted against the plan) or its own:
+
+| Channel | Own providers |
+|---|---|
+| WhatsApp | WhatsApp Cloud API (Meta, direct), WATI, Twilio |
+| SMS | MSG91 (DLT sender + template IDs), Twilio |
+| Email | any SMTP server (Gmail / Workspace app password, Zoho, Microsoft 365, SES, Brevo ...) |
+
+Credentials are checked with the provider before they are saved (where it has a read-only check),
+encrypted with `SETTINGS_ENCRYPTION_KEY` bound to the school and channel, and only ever shown as
+`•••• last4`. A branch can have its own row (a campus with its own number).
+
+**Events, rules, templates** (`notifications/catalog.js`): absent, late, absence corrected, reached
+school (gate device), fee due reminder, fee received, notice, report card published, homework set,
+birthday. Per event the school sets on/off, channels in fallback order (WhatsApp, then SMS if the parent
+isn't on WhatsApp, then email), audience (all guardians / primary parent) and timing (right away, after
+N minutes, at a fixed time, or a daily schedule). Templates per event and channel; without one the
+defaults are used, which render exactly what the platform templates expected before. Own SMS / WhatsApp
+text only applies with the school's own account. With the Cloud API a WhatsApp template can be
+submitted to Meta and its approval synced; it is used only once approved.
+
+New hooks: counter and online receipts (`notifyFeeReceipt`), report-card publish, homework. They queue
+into the attendance outbox after the business transaction commits and never fail it.
+
+**Scheduler** (`notifications/scheduler.js`, every minute on each replica; `scheduled_runs` makes each job
+run once per school per day): automatic fee reminders (rule timing `autoRun`, every N days), birthday
+wishes, and the device-attendance cut-off.
+
+**Attendance devices** (`modules/devices`):
+
+- JSON API for gate apps, QR scanners, RFID middleware: `POST /api/v1/devices/punch` with
+  `X-Device-Key: smd_...` and `{ identifier, at? }` or `{ punches: [...] }` (max 500). `GET /api/v1/devices/me`.
+- ZKTeco / eSSL **ADMS push** (most biometric and face terminals in India): `/iclock/cdata`,
+  `/iclock/getrequest`, `/iclock/devicecmd` at the root (the web app proxies `/iclock/*`). The device is
+  identified by its serial number registered in Settings → Devices; point its Cloud Server setting at the
+  school's web address, port 443.
+- Identifiers: saved card / device-user numbers, else the admission number or employee code.
+- Students: present, or late after `lateAfter`; an "absent" mark becomes late (pending absence message
+  cancelled, a sent one corrected). Staff: first punch = check-in, a later one = check-out. Every punch is
+  kept in `device_punches` with its result.
+- Cut-off (optional): sections using devices whose register isn't taken are completed as absent, and
+  parents get the absence message per the rule.
+
+**Platform console API** (`/api/v1/platform/*`, platform admins only): overview, plans (create / edit),
+schools (list, onboard with an owner login and a temporary password shown once, change plan / status /
+trial / overrides, suspend). Suspending blocks sign-in for the whole school.
+
 ## Online fee payment (Razorpay)
 
 ```

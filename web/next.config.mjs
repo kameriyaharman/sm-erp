@@ -27,7 +27,11 @@ const nextConfig = {
   reactStrictMode: true,
   images: { unoptimized: true },
   async rewrites() {
-    return [{ source: '/api/v1/:path*', destination: `${apiUrl}/api/v1/:path*` }];
+    return [
+      { source: '/api/v1/:path*', destination: `${apiUrl}/api/v1/:path*` },
+      // Biometric / face terminals (eSSL, ZKTeco "ADMS" push) call this fixed path on the school's address.
+      { source: '/iclock/:path*', destination: `${apiUrl}/iclock/:path*` },
+    ];
   },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

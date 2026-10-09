@@ -36,6 +36,8 @@ export function friendlyError(err: unknown): string {
     const status = Number(e!.status);
     const message = String(e!.message ?? '');
     if (FRIENDLY[code]) return FRIENDLY[code];
+    // Plan / module answers carry their own sentence ("switched off" vs "not in your plan").
+    if (code === 'MODULE_DISABLED' || code === 'PLAN_LIMIT_REACHED' || code === 'OWNER_ONLY') return message;
     if (status === 403) return "You don't have permission to do this.";
     if (status === 404) return message && !/not found/i.test(message) ? message : "This record doesn't exist or isn't available to you.";
     return message;

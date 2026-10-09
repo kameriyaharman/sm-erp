@@ -31,7 +31,7 @@ function LoginForm() {
   useEffect(() => {
     getAccessToken().then((token) => {
       const user = token ? currentUser() : null;
-      if (user) router.replace(user.mustChangePassword ? '/set-password' : safeNext(params.get('next')) ?? homeFor(user.role));
+      if (user) router.replace(user.mustChangePassword ? '/set-password' : safeNext(params.get('next')) ?? homeFor(user.role, user.tenantId));
     });
     try {
       const last = localStorage.getItem('sm_last_school');
@@ -60,7 +60,7 @@ function LoginForm() {
         router.replace(next ? `/set-password?next=${encodeURIComponent(next)}` : '/set-password');
         return;
       }
-      router.replace(safeNext(params.get('next')) ?? homeFor(user.role));
+      router.replace(safeNext(params.get('next')) ?? homeFor(user.role, user.tenantId));
     } catch (err) {
       setError(err instanceof AuthError ? err.message : 'Sign-in failed. Please try again.');
       setBusy(false);

@@ -165,7 +165,9 @@ export async function logout(): Promise<void> {
   clear();
 }
 
-export function homeFor(role: Role): string {
+export function homeFor(role: Role, tenantId?: string | null): string {
+  // SM ERP platform administrators (no school) start in the platform console.
+  if (role === 'super_admin' && tenantId === null) return '/platform';
   switch (role) {
     case 'super_admin':
     case 'branch_admin':
