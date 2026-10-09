@@ -20,6 +20,12 @@ export const DEFAULT_WATI_TEMPLATES = {
   attendance_correction: { name: 'attendance_correction', params: ['school_name', 'student_name', 'date'] },
   fee_due_reminder: { name: 'fee_due_reminder', params: ['parent_name', 'amount', 'due_date', 'school_name', 'payment_link'] },
   general_notice: { name: 'school_notice', params: ['school_name', 'notice_title', 'notice_body'] },
+  late_arrival: { name: 'late_arrival', params: ['student_name', 'school_name', 'date', 'time'] },
+  gate_entry: { name: 'gate_entry', params: ['student_name', 'school_name', 'time', 'date'] },
+  fee_receipt: { name: 'fee_receipt', params: ['parent_name', 'school_name', 'amount', 'student_name', 'date', 'receipt_number'] },
+  report_card_published: { name: 'report_card_published', params: ['term_name', 'student_name', 'school_name', 'portal_link'] },
+  homework_assigned: { name: 'homework_assigned', params: ['subject_name', 'class_name', 'homework_title', 'due_date', 'school_name'] },
+  birthday_wish: { name: 'birthday_wish', params: ['student_name', 'school_name'] },
 };
 
 export class WatiProvider {
@@ -49,7 +55,8 @@ export class WatiProvider {
     if (channel !== 'whatsapp') {
       throw new NotificationError('CHANNEL_NOT_SUPPORTED', 'WATI only sends WhatsApp', { provider: this.name, tryNextChannel: true });
     }
-    const config = this.templates[template];
+    // A school's own template (Settings -> Message templates) names the approved template and its parameters.
+    const config = rendered.whatsapp?.name ? { name: rendered.whatsapp.name, params: rendered.whatsapp.params ?? [] } : this.templates[template];
     if (!config?.name) {
       throw new NotificationError('TEMPLATE_NOT_CONFIGURED', `No WATI template set for "${template}"`, { provider: this.name, tryNextChannel: true });
     }

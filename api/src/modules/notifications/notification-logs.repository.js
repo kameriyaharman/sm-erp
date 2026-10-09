@@ -18,14 +18,14 @@ export function createPgLogStore(db = pool) {
     async begin(entry) {
       const params = [
         entry.tenantId ?? null, entry.branchId ?? null, entry.batchId ?? null, entry.eventType, entry.template,
-        entry.recipientPhone, entry.recipientUserId ?? null, entry.studentId ?? null, JSON.stringify(entry.payload),
-        entry.maxRetries ?? RETRY_BACKOFF_MINUTES.length, entry.dedupeKey ?? null, entry.createdBy ?? null,
+        entry.recipientPhone ?? null, entry.recipientUserId ?? null, entry.studentId ?? null, JSON.stringify(entry.payload),
+        entry.maxRetries ?? RETRY_BACKOFF_MINUTES.length, entry.dedupeKey ?? null, entry.createdBy ?? null, entry.recipientEmail ?? null,
       ];
       const { rows } = await db.query(
         `INSERT INTO notification_logs
                 (tenant_id, branch_id, batch_id, event_type, template, recipient_phone, recipient_user_id,
-                 student_id, payload, max_retries, dedupe_key, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                 student_id, payload, max_retries, dedupe_key, created_by, recipient_email)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ${entry.dedupeKey ? `ON CONFLICT (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), dedupe_key)
                               WHERE dedupe_key IS NOT NULL DO NOTHING` : ''}
          RETURNING id`,
@@ -60,7 +60,8 @@ export function createPgLogStore(db = pool) {
                 provider_message_id = COALESCE($8, provider_message_id),
                 last_error_code = $9,
                 last_error_message = left($10, 500),
-                last_http_status = $11
+                last_http_status = $11,
+                account = COALESCE($12, account)
           WHERE id = $1`,
         [
           id, ok, retryable, RETRY_BACKOFF_MINUTES, result.attempts ?? 0,
@@ -70,6 +71,7 @@ export function createPgLogStore(db = pool) {
           ok ? null : result.error?.code ?? 'UNKNOWN',
           ok ? null : result.error?.message ?? null,
           ok ? null : result.error?.status ?? null,
+          ok ? result.account ?? null : null,
         ],
       );
     },
@@ -130,7 +132,7 @@ export async function listLogs({ tenantId, branchIds, status, eventType, batchId
   const digits = phoneDigits.length >= 4 ? phoneDigits : null;
   const { rows } = await pool.query(
     `SELECT l.id, l.tenant_id, l.branch_id, l.batch_id, l.event_type, l.template, l.channel, l.provider,
-            l.recipient_phone, l.recipient_user_id, concat_ws(' ', u.first_name, u.last_name) AS recipient_name,
+            l.recipient_phone, l.recipient_email, l.account, l.recipient_user_id, concat_ws(' ', u.first_name, u.last_name) AS recipient_name,
             l.student_id, concat_ws(' ', su.first_name, su.last_name) AS student_name,
             l.status, l.attempts, l.retry_count, l.max_retries, l.next_retry_at,
             l.last_error_code, l.last_error_message, l.last_http_status, l.provider_message_id,
@@ -150,6 +152,7 @@ export async function listLogs({ tenantId, branchIds, status, eventType, batchId
         AND ($9::date   IS NULL OR (l.created_at AT TIME ZONE COALESCE(t.timezone, 'Asia/Kolkata'))::date <= $9)
         AND ($10::text  IS NULL
              OR ($11::text IS NOT NULL AND regexp_replace(l.recipient_phone, '\\D', '', 'g') LIKE '%' || $11 || '%')
+             OR l.recipient_email ILIKE $10
              OR concat_ws(' ', u.first_name, u.last_name) ILIKE $10
              OR concat_ws(' ', su.first_name, su.last_name) ILIKE $10
              OR sp.admission_number ILIKE $10)

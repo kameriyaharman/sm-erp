@@ -58,7 +58,8 @@ export class TwilioProvider {
   async send({ channel, to, template, rendered }) {
     const form = new URLSearchParams();
     if (channel === 'whatsapp') {
-      const contentSid = this.contentSids[template];
+      // A school's own WhatsApp template stores its Content SID (HX...) as the template name.
+      const contentSid = rendered.whatsapp?.name ?? this.contentSids[template];
       if (!contentSid) {
         throw new NotificationError('TEMPLATE_NOT_CONFIGURED', `No approved WhatsApp template (Content SID) set for "${template}"`, {
           provider: this.name,

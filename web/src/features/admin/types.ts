@@ -407,7 +407,9 @@ export interface RouteRider {
 
 // ------------------------------------------------------------------ notifications
 export type LogStatus = 'sending' | 'sent' | 'failed' | 'abandoned';
-export type LogEvent = 'absentee_alert' | 'fee_due_reminder' | 'broadcast_notice' | 'attendance_correction';
+export type LogEvent =
+  | 'absentee_alert' | 'fee_due_reminder' | 'broadcast_notice' | 'attendance_correction'
+  | 'late_arrival' | 'gate_entry' | 'fee_receipt' | 'report_card_published' | 'homework_assigned' | 'birthday_wish' | 'test_message';
 export interface NotificationLog {
   id: string;
   batchId: string | null;
@@ -415,7 +417,9 @@ export interface NotificationLog {
   template: string | null;
   channel: string | null;
   provider: string | null;
-  recipient: { userId: string | null; name?: string | null; phone: string | null };
+  recipient: { userId: string | null; name?: string | null; phone: string | null; email?: string | null };
+  /** Whose account sent it: the school's own provider or the SM ERP platform account. */
+  account?: 'school' | 'platform' | null;
   student: Ref | null;
   status: LogStatus;
   attempts: number;

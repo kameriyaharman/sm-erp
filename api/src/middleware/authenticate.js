@@ -20,6 +20,8 @@ function extractBearerToken(req) {
  * On success sets `req.auth = { userId, role, tenantId, branchId, tokenId }`.
  */
 export async function authenticate(req, _res, next) {
+  // Already authenticated earlier in this request (e.g. by a module gate in routes.js).
+  if (req.auth) return next();
   const token = extractBearerToken(req);
   if (!token) throw AppError.unauthorized('Missing or malformed Authorization header');
 

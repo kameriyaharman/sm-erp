@@ -53,7 +53,7 @@ function SetPassword() {
   const forced = Boolean(user?.mustChangePassword);
   const destination = (u: SessionUser) => {
     const n = params.get('next');
-    return n && n.startsWith('/') && !n.startsWith('//') && n !== '/set-password' ? n : homeFor(u.role);
+    return n && n.startsWith('/') && !n.startsWith('//') && n !== '/set-password' ? n : homeFor(u.role, u.tenantId);
   };
 
   const checks = rules(next);

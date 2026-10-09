@@ -5,14 +5,21 @@ import { TwilioProvider } from './providers/twilio.provider.js';
 import { DEFAULT_WATI_TEMPLATES, WatiProvider } from './providers/wati.provider.js';
 import { createPgLogStore } from './notification-logs.repository.js';
 import { findNoticeRecipients } from './recipients.repository.js';
+import { SimulatedEmailProvider, SmtpEmailProvider } from './providers/email.provider.js';
+import { createTenantResolver } from './tenant-resolver.js';
 
 export { NotificationService } from './NotificationService.js';
 
 let shared;
 /** Process-wide instance used by routes, the dispatcher and the retry worker. */
 export function getNotifier({ env, logger }) {
-  shared ??= createNotificationService({ env, logger });
+  shared ??= createNotificationService({ env, logger, perSchool: true });
   return shared;
+}
+
+/** Call after a school changes its channels, templates, rules or modules (this replica sees it at once). */
+export function invalidateSchoolMessaging(tenantId) {
+  shared?.tenantResolver?.invalidate(tenantId);
 }
 export { NotificationError } from './errors.js';
 
@@ -22,7 +29,7 @@ export { NotificationError } from './errors.js';
  *   NOTIFY_WHATSAPP_PROVIDER  none | wati | twilio | simulated
  * Every dispatch is recorded in notification_logs (pass logStore: null to disable).
  */
-export function createNotificationService({ env, logger, recipientResolver = findNoticeRecipients, logStore = createPgLogStore() }) {
+export function createNotificationService({ env, logger, recipientResolver = findNoticeRecipients, logStore = createPgLogStore(), perSchool = false }) {
   let twilio;
   const getTwilio = () => {
     twilio ??= new TwilioProvider({
@@ -90,8 +97,27 @@ export function createNotificationService({ env, logger, recipientResolver = fin
     none: () => undefined,
   }[env.NOTIFY_WHATSAPP_PROVIDER]();
 
+  const email = {
+    smtp: () =>
+      new SmtpEmailProvider({
+        host: env.EMAIL_SMTP_HOST,
+        port: env.EMAIL_SMTP_PORT,
+        user: env.EMAIL_SMTP_USER,
+        password: env.EMAIL_SMTP_PASSWORD,
+        fromEmail: env.EMAIL_FROM,
+        fromName: env.EMAIL_FROM_NAME,
+      }),
+    simulated: () => new SimulatedEmailProvider({ logger }),
+    none: () => undefined,
+  }[env.NOTIFY_EMAIL_PROVIDER ?? 'none']();
+
+  // Schools may connect their own WhatsApp / SMS / email accounts; the env providers are the
+  // platform account used for everyone else.
+  const tenantResolver = perSchool ? createTenantResolver({ platformProviders: { sms, whatsapp, email }, logger, env }) : undefined;
+
   const service = new NotificationService({
-    providers: { sms, whatsapp },
+    providers: { sms, whatsapp, ...(email && { email }) },
+    tenantResolver,
     logStore: logStore ?? undefined,
     logger,
     schoolName: env.NOTIFY_SCHOOL_NAME,
@@ -103,6 +129,8 @@ export function createNotificationService({ env, logger, recipientResolver = fin
   logger.info('Notification service ready', {
     sms: sms?.name ?? 'none',
     whatsapp: whatsapp?.name ?? 'none',
+    email: email?.name ?? 'none',
+    perSchool: Boolean(tenantResolver),
     channelOrder: service.channelOrder,
   });
   return service;

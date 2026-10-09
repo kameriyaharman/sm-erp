@@ -173,7 +173,7 @@ export async function getNoticeRecipients(db, studentIds) {
   const { rows } = await db.query(
     `SELECT sp.id AS student_id, concat_ws(' ', su.first_name, su.last_name) AS student_name,
             pu.id AS parent_user_id, concat_ws(' ', pu.first_name, pu.last_name) AS parent_name,
-            pu.phone, pu.email
+            pu.phone, pu.email, (pu.id = sp.parent_id) AS is_primary
        FROM student_profiles sp
        JOIN users su ON su.id = sp.user_id
        JOIN users pu ON pu.deleted_at IS NULL AND pu.status = 'active'
@@ -196,14 +196,16 @@ export async function enqueueNotifications(db, notifications) {
   const { rows } = await db.query(
     `INSERT INTO parent_notifications
             (tenant_id, branch_id, student_id, parent_user_id, channel, recipient,
-             template, payload, message, dedupe_key, created_by)
+             template, payload, message, dedupe_key, created_by, next_attempt_at)
      SELECT x.tenant_id, x.branch_id, x.student_id, x.parent_user_id, x.channel::notification_channel,
-            x.recipient, x.template, x.payload, x.message, x.dedupe_key, x.created_by
+            x.recipient, x.template, x.payload, x.message, x.dedupe_key, x.created_by,
+            GREATEST(now(), COALESCE(x.next_attempt_at, now()))
        FROM jsonb_to_recordset($1::jsonb) AS x(
             tenant_id uuid, branch_id uuid, student_id uuid, parent_user_id uuid, channel text,
-            recipient text, template text, payload jsonb, message text, dedupe_key text, created_by uuid)
+            recipient text, template text, payload jsonb, message text, dedupe_key text, created_by uuid,
+            next_attempt_at timestamptz)
      ON CONFLICT (tenant_id, dedupe_key) DO UPDATE
-        SET status = 'queued', attempts = 0, next_attempt_at = now(), last_error = NULL,
+        SET status = 'queued', attempts = 0, next_attempt_at = EXCLUDED.next_attempt_at, last_error = NULL,
             message = EXCLUDED.message, recipient = EXCLUDED.recipient
       WHERE parent_notifications.status = 'cancelled'
      RETURNING id, student_id, template`,

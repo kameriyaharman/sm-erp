@@ -10,7 +10,7 @@ import { pool } from '../../db/pool.js';
 export async function findNoticeRecipients({ role, tenantId, branchId }) {
   if (role === 'parent') {
     const { rows } = await pool.query(
-      `SELECT DISTINCT ON (pu.id) pu.id AS user_id, concat_ws(' ', pu.first_name, pu.last_name) AS name, pu.phone, sp.branch_id
+      `SELECT DISTINCT ON (pu.id) pu.id AS user_id, concat_ws(' ', pu.first_name, pu.last_name) AS name, pu.phone, pu.email, sp.branch_id
          FROM student_profiles sp
          JOIN users pu
            ON pu.deleted_at IS NULL AND pu.status = 'active'
@@ -23,16 +23,16 @@ export async function findNoticeRecipients({ role, tenantId, branchId }) {
         ORDER BY pu.id, sp.branch_id`,
       [tenantId ?? null, branchId ?? null],
     );
-    return rows.map((r) => ({ userId: r.user_id, name: r.name, phone: r.phone, branchId: r.branch_id }));
+    return rows.map((r) => ({ userId: r.user_id, name: r.name, phone: r.phone, email: r.email, branchId: r.branch_id }));
   }
 
   const { rows } = await pool.query(
-    `SELECT u.id AS user_id, concat_ws(' ', u.first_name, u.last_name) AS name, u.phone, u.branch_id
+    `SELECT u.id AS user_id, concat_ws(' ', u.first_name, u.last_name) AS name, u.phone, u.email, u.branch_id
        FROM users u
       WHERE u.role = $1::user_role AND u.deleted_at IS NULL AND u.status = 'active'
         AND ($2::uuid IS NULL OR u.tenant_id = $2)
         AND ($3::uuid IS NULL OR u.branch_id = $3)`,
     [role, tenantId ?? null, branchId ?? null],
   );
-  return rows.map((r) => ({ userId: r.user_id, name: r.name, phone: r.phone, branchId: r.branch_id }));
+  return rows.map((r) => ({ userId: r.user_id, name: r.name, phone: r.phone, email: r.email, branchId: r.branch_id }));
 }

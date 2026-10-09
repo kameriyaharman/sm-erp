@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { assertStudentCapacity } from '../saas/entitlements.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { pool, withTransaction } from '../../db/pool.js';
 import { AppError } from '../../errors/AppError.js';
@@ -178,6 +179,7 @@ export async function admitStudent(auth, input) {
     if (input.dateOfBirth >= admissionDate) throw invalid('dateOfBirth', 'Date of birth must be before the admission date');
 
     await repo.lockBranchAdmissions(db, section.branch_id);
+    await assertStudentCapacity(db, section.tenant_id); // plan limit (maxStudents)
     await assertAadhaarFree(db, section.tenant_id, extra.aadhaar_number);
 
     let admissionNumber = input.admissionNumber;

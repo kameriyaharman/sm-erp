@@ -6,6 +6,7 @@ import { logger } from './utils/logger.js';
 import { simulatedProvider, startNotificationDispatcher, stopNotificationDispatcher } from './modules/notifications/dispatcher.js';
 import { getNotifier } from './modules/notifications/index.js';
 import { startRetryWorker } from './modules/notifications/retry.worker.js';
+import { startScheduler } from './modules/notifications/scheduler.js';
 
 // Redis is optional; connect before taking traffic so the first requests use the shared cache.
 const redisConnected = await connectRedis();
@@ -16,6 +17,7 @@ if (env.isProduction && !env.REDIS_URL) {
 const app = createApp();
 const notifier = getNotifier({ env, logger });
 let retryWorker;
+let scheduler;
 let shuttingDown = false;
 
 const server = app.listen(env.PORT, () => {
@@ -33,6 +35,8 @@ const server = app.listen(env.PORT, () => {
   );
   // Failed WhatsApp/SMS dispatches in notification_logs are retried on a schedule.
   retryWorker = startRetryWorker({ notifier, logger, intervalMs: env.NOTIFY_RETRY_INTERVAL_MS });
+  // Per-school daily jobs: automatic fee reminders, birthday wishes, device-attendance cut-off.
+  if (env.SCHEDULER_ENABLED) scheduler = startScheduler({ notifier, env, logger, intervalMs: env.SCHEDULER_INTERVAL_MS });
 });
 
 // Behind Railway's proxy: keep-alive longer than the proxy's, headers a bit longer still.
@@ -50,6 +54,7 @@ function shutdown(signal) {
   logger.info('Shutting down', { signal, pool: poolStats() });
   stopNotificationDispatcher();
   retryWorker?.stop();
+  scheduler?.stop();
   server.close(async () => {
     await Promise.allSettled([pool.end(), closeRedis()]);
     logger.info('Shutdown complete');

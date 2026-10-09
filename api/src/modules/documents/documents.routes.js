@@ -4,6 +4,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { validate } from '../../middleware/validate.js';
 import { pdfLimiter, verifyLimiter } from '../../middleware/rateLimit.js';
+import { requireModule } from '../../middleware/requireModule.js';
 import * as s from './documents.schemas.js';
 import * as controller from './documents.controller.js';
 
@@ -13,6 +14,10 @@ router.use(authenticate);
 const admins = authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_ADMIN);
 const staff = authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_ADMIN, ROLES.TEACHER);       // teacher = class teacher (checked in service)
 const viewers = authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_ADMIN, ROLES.TEACHER, ROLES.PARENT, ROLES.STUDENT);
+
+// Plan / module gates: report cards and certificates are optional modules.
+router.use(['/report-cards', '/sections', '/students/:studentId/report-cards'], requireModule('report_cards'));
+router.use(['/certificates', '/students/:studentId/transfer-certificate', '/students/:studentId/bonafide'], requireModule('certificates'));
 
 // ---- Report cards
 router.post('/report-cards/generate', staff, validate({ body: s.generateBody }), controller.generateReportCards);

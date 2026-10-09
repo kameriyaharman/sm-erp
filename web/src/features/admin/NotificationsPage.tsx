@@ -16,6 +16,13 @@ const EVENT_LABEL: Record<LogEvent, string> = {
   fee_due_reminder: 'Fee reminder',
   broadcast_notice: 'Notice',
   attendance_correction: 'Attendance correction',
+  late_arrival: 'Late arrival',
+  gate_entry: 'Reached school',
+  fee_receipt: 'Fee received',
+  report_card_published: 'Report card',
+  homework_assigned: 'Homework',
+  birthday_wish: 'Birthday wish',
+  test_message: 'Test message',
 };
 
 const STATUS_LABEL: Record<LogStatus, string> = { sent: 'Sent', sending: 'Sending', failed: 'Failed', abandoned: 'Abandoned' };
@@ -102,7 +109,7 @@ export default function NotificationsPage() {
                     <Td className="whitespace-nowrap">{EVENT_LABEL[l.eventType] ?? titleCase(l.eventType)}</Td>
                     <Td className="whitespace-nowrap">
                       {l.recipient.name ?? '-'}
-                      <span className="block text-xs tabular-nums text-slate-500">{l.recipient.phone ?? ''}</span>
+                      <span className="block text-xs tabular-nums text-slate-500">{l.recipient.phone ?? l.recipient.email ?? ''}</span>
                     </Td>
                     <Td className="whitespace-nowrap">{l.student?.name ?? '-'}</Td>
                     <Td className="whitespace-nowrap">{l.channel ? titleCase(l.channel) : '-'}</Td>

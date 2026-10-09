@@ -1,4 +1,5 @@
 import { pool, withTransaction } from '../../db/pool.js';
+import { notifyHomework } from '../notifications/events.js';
 import { AppError } from '../../errors/AppError.js';
 import { ROLES } from '../../config/roles.js';
 import { logger } from '../../utils/logger.js';
@@ -87,7 +88,9 @@ export async function createHomework(auth, input) {
     ...input, tenantId: section.tenant_id, branchId: section.branch_id, createdBy: auth.userId,
   });
   logger.info('Homework set', { homeworkId: id, sectionId: section.id, subjectId: input.subjectId ?? null, by: auth.userId });
-  return mapHomework(await repo.getHomework(pool, id), { auth });
+  const created = await repo.getHomework(pool, id);
+  notifyHomework({ tenantId: section.tenant_id, sectionId: section.id, homeworkId: id, title: created.title, subjectName: created.subject_name, dueDate: created.due_date instanceof Date ? created.due_date.toISOString().slice(0, 10) : String(created.due_date).slice(0, 10), createdBy: auth.userId });
+  return mapHomework(created, { auth });
 }
 
 /** Loads homework the caller may change: 404 outside their branch scope, 403 NOT_OWNER for another teacher's. */

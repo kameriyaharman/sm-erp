@@ -31,7 +31,7 @@ export const feeRemindersBody = z
 export const logsQuery = z
   .object({
     status: z.enum(['sending', 'sent', 'failed', 'abandoned']).optional(),
-    eventType: z.enum(['absentee_alert', 'fee_due_reminder', 'broadcast_notice', 'attendance_correction']).optional(),
+    eventType: z.enum(['absentee_alert', 'fee_due_reminder', 'broadcast_notice', 'attendance_correction', 'late_arrival', 'gate_entry', 'fee_receipt', 'report_card_published', 'homework_assigned', 'birthday_wish', 'test_message']).optional(),
     batchId: uuid.optional(),
     from: isoDate.optional(),     // created on or after (school's time zone)
     to: isoDate.optional(),
